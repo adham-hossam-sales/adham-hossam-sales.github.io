@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sales Desk</title>
+<title>Sales Department</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAwFBMVEU2IyUfKWZvbm4nSa1ZbbAzFxsFH3QhRqtPKCcHP78WOZ1Zdsb//PyptdfSn3fN0uM0JyidmrTitI5cRjiZncr/ypU6MTJwWlqSbVWvh25VW64bPqI2Uq5BMzBOLlJ+lM+noWMoJ08bMp4AAP8Af38/RXAAVao0WcA/n58A//9VAABVAFVQQj91XlhBUZpItrZug71V//+bfEqKcl2BZVGQe4f//38AAABmKS5VIyxGHSWZp9Bxh8eFl8wkR6szVrV91t4CAAAAQHRSTlP08RWb/gkJ7PcE9/4D/f3+nxL9+xr9ZPv5/RGfZp3//wuwQgECiAOgCAMDA5VxQgf/Ayl4qP8CAP7+/v7+/fP9RuOTOQAAAW5JREFUeNp1ktd6wyAMhQGTmHiPuBkd6d57CTA27/9WFb3p14AFN0a/j44EBPaCsf/fZC99TEhVTwGXwIiLagqYwQFp25YQNglU667rGjGb9FCt1kWxaWfAJhQeE5pQSt8nAAYfK77ZfK1OIZsA2KZrmu4TZvOwh1N4apqmYNn0oLZoUiT07BnmAeABrqgo1vpEKpIFFO5hrhUtuJZSirtQiReipKInmJfkzQdw0Bp/RkYhECpxKzRm5S9A/S7cTRGn/svQUJuVaKXSWukgwNxbWGFaEVfo0JuDs+jEJTJoIQoAlasvhIMkvQkAx0oTSokQqJJEsNgDMqgpt2lsY3wPNPYBBltbmvK13/Vpnlsf2MK5KQfel7jyPPWBBRyZIe8xTD6a1O9iAZG1nCfjmMSJtT4wh8gMGCbdpUPPD70SCAxlb/ocPQx9wANkccoHwzHMaAPARRbFIxpI4hFXfATX/m1mdb1c4l7W2fff6Q8LK7J+iEkNowAAAABJRU5ErkJggg==" id="fav">
 <meta name="theme-color" content="#5E1A29">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -45,7 +46,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:230px 1fr;min-height:100%}
 .rail{background:var(--rail);color:#fff;padding:18px 12px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow:auto}
 .brand{display:flex;flex-direction:column;padding:0 8px 14px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:8px}
-.brand b{font-family:var(--font-display);font-size:17px}
+.brand{flex-direction:row!important;align-items:center;gap:10px}
+.brand img{width:46px;height:46px;object-fit:contain;flex:none}
+.brand div{display:flex;flex-direction:column;min-width:0}
+.brand b{font-family:var(--font-display);font-size:16px;line-height:1.25}
+.auth-logo{display:flex;align-items:center;gap:14px}.auth-logo img{width:72px;height:72px;object-fit:contain}
 .brand span{opacity:.7;font-size:12px}
 .nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:rgba(255,255,255,.82);text-decoration:none;font-weight:500}
 .nav a:hover{background:rgba(255,255,255,.08)}
@@ -291,9 +296,14 @@ async function loadRef(){
   const [profiles,settings,courses,groups]=await Promise.all([
     Q(S.sb.from('profiles').select('*').order('name')),Q(S.sb.from('settings').select('*')),
     Q(S.sb.from('courses').select('*').order('name')),Q(S.sb.from('groups').select('*').order('start_date',{ascending:false,nullsFirst:false}))]);
-  S.profiles=Object.fromEntries(profiles.map(p=>[p.id,p]));S.settings=Object.fromEntries(settings.map(s=>[s.key,s.value]));S.courses=courses;S.groups=groups;
+  S.profiles=Object.fromEntries(profiles.map(p=>[p.id,p]));setTimeout(applyBrand);S.settings=Object.fromEntries(settings.map(s=>[s.key,s.value]));S.courses=courses;S.groups=groups;
 }
 const setting=(k,def)=>S.settings[k]!=null?S.settings[k]:def;
+const brand=()=>Object.assign({name:'Sales Department',sub:'Adham Hossam',logo:''},S.brandPub||{},S.settings.brand||{});
+const DEFAULT_LOGO='data:image/png;base64,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';
+const logoSrc=()=>brand().logo||DEFAULT_LOGO;
+function applyBrand(){const b=brand();document.title=b.name;const f=$('#fav');if(f&&b.logo)f.href=b.logo}
+const brandHead=(big)=>{const b=brand();return `<div class="auth-logo"><img src="${esc(logoSrc())}" alt=""><div><h1>${esc(b.name)}</h1><div class="hint">${esc(b.sub)}</div></div></div>`};
 const courseNames=()=>S.courses.filter(c=>c.active).map(c=>c.name);
 const platforms=()=>setting('platforms',['Instagram','Facebook','TikTok']);
 const checklist=()=>setting('checklist',[]);
@@ -304,6 +314,8 @@ const groupName=id=>{const g=S.groups.find(x=>x.id===id);return g?`${g.name}${g.
 async function boot(){
   if(!CFG.SUPABASE_URL||!CFG.SUPABASE_ANON_KEY||!window.supabase){S.fatal=!window.supabase?"Couldn't load the app libraries. Check your internet connection and reload.":'Sales Desk is not connected to its database yet. Fill SUPABASE_URL and SUPABASE_ANON_KEY in config.js.';render();return}
   S.sb=supabase.createClient(CFG.SUPABASE_URL,CFG.SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+  try{const {data}=await S.sb.from('settings').select('value').eq('key','brand').maybeSingle();if(data)S.brandPub=data.value}catch(_){}
+  applyBrand();
   S.sb.auth.onAuthStateChange((ev,session)=>{if(ev==='SIGNED_OUT'){S.session=null;S.me=null;render()}});
   const {data:{session}}=await S.sb.auth.getSession();
   if(session){S.session=session;await enter()}else{await checkAdmin();render()}
@@ -315,7 +327,7 @@ async function enter(){
     const uid=S.session.user.id;
     const {data:me,error}=await S.sb.from('profiles').select('*').eq('id',uid).maybeSingle();
     if(error)throw error;
-    if(!me){S.authMsg="This account doesn't have access to Sales Desk. Ask your admin to add you.";await S.sb.auth.signOut();S.booting=false;await checkAdmin();render();return}
+    if(!me){S.authMsg="This account doesn't have access to this system. Ask your admin to add you.";await S.sb.auth.signOut();S.booting=false;await checkAdmin();render();return}
     if(!me.active){S.authMsg='Your account has been deactivated. Contact your admin.';await S.sb.auth.signOut();S.booting=false;render();return}
     S.me=me;await loadRef();S.me=S.profiles[uid]||me;
     const h=location.hash.slice(1);S.view=h||(me.role==='agent'?'leads':'dashboard');
@@ -350,8 +362,8 @@ function render(){
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{if(ss!=null)el.setSelectionRange(ss,ss)}catch(_){}}}
 }
 function view(){
-  if(S.fatal)return `<div class="center"><div class="card"><h1>Sales Desk</h1><p>${esc(S.fatal)}</p></div></div>`;
-  if(!S.sb||S.booting)return `<div class="center"><div class="card"><h1>Sales Desk</h1><p class="hint"><span class="spin"></span> Loading…</p></div></div>`;
+  if(S.fatal)return `<div class="center"><div class="card">${brandHead()}<p>${esc(S.fatal)}</p></div></div>`;
+  if(!S.sb||S.booting)return `<div class="center"><div class="card">${brandHead()}<p class="hint"><span class="spin"></span> Loading…</p></div></div>`;
   if(!S.me)return authView();
   const me=S.me;
   const navs=me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
@@ -360,7 +372,7 @@ function view(){
   if(!navs.find(n=>n[0]===S.view))S.view=navs[0][0];
   const showPeriod=['dashboard','leads','reservations'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
-  <aside class="rail" id="rail"><div class="brand"><b>Sales Desk</b><span>Sales Department</span></div>
+  <aside class="rail" id="rail"><div class="brand"><img src="${esc(logoSrc())}" alt=""><div><b>${esc(brand().name)}</b><span>${esc(brand().sub)}</span></div></div>
    <nav class="nav">${navs.map(([k,t])=>`<a href="#${k}" class="${S.view===k?'on':''}">${t}</a>`).join('')}</nav>
    <div class="me"><div><b class="ar">${esc(me.name)}</b>${ROLES[me.role]}</div><button data-act="pw-mine">Change my password</button><button data-act="logout">Sign out</button></div></aside>
   <div class="main">
@@ -372,7 +384,7 @@ function view(){
 }
 function authView(){
   const setup=S.hasAdmin===false;
-  return `<div class="center"><div class="card"><div><h1>Sales Desk</h1><div class="hint">Sales Department</div></div>
+  return `<div class="center"><div class="card">${brandHead()}
   ${S.authMsg?`<div class="note bad">${esc(S.authMsg)}</div>`:''}
   ${setup?`<div class="note info">First-time setup: create the admin account. You'll add everyone else from inside the system.</div>
    <div class="field"><label for="su-name">Your name</label><input class="inp" id="su-name" autocomplete="name"></div>
@@ -880,7 +892,7 @@ function internsView(){
   if(!all)return '<div class="empty"><span class="spin"></span></div>';
   const list=all.filter(i=>(!f.st||i.status===f.st)&&(!q||(i.name||'').toLowerCase().includes(q)||(i.phone||'').includes(q)));
   const c=k=>all.filter(i=>i.status===k).length;const avg=all.length?(all.reduce((s,i)=>s+i.attempts.filter(a=>a.result!=='noshow').length,0)/all.length).toFixed(1):'—';
-  return `<div class="head"><div><h1>Interviews</h1><div class="sub">Students who finished a course and are interviewing for the internship (which includes the sales track)</div></div><div class="sp"></div><button class="btn pri" data-act="in-new">+ New applicant</button></div>
+  return `<div class="head"><div><h1>Interviews</h1><div class="sub">Students who finished a course and are interviewing for the internship (which includes the sales track)</div></div><div class="sp"></div><button class="btn" data-act="in-xlsx">Export Excel</button><button class="btn pri" data-act="in-new">+ New applicant</button></div>
   <div class="kpis">${kpi('All applicants',all.length)}${kpi('Under review',c('pending'))}${kpi('Accepted',c('accepted'))}${kpi('Rejected',c('rejected'))}${kpi('Avg. interviews attended',avg)}</div>
   <div class="row"><input class="inp" id="in-q" data-in="inq" placeholder="Search by name or number…" value="${esc(f.q)}" style="flex:2;min-width:180px">
    <div class="tabs">${[['','All'],['pending','Under review'],['accepted','Accepted'],['rejected','Rejected']].map(([k,t])=>`<button data-act="in-st" data-k="${k}" class="${f.st===k?'on':''}">${t}</button>`).join('')}</div></div>
@@ -924,6 +936,30 @@ async function internModal(id){
     ${i.agent_id?`<div class="note info" style="margin-top:10px">Now on the team as <span class="ar">${esc(pname(i.agent_id))}</span>.</div>`:''}</div>
    <details><summary style="cursor:pointer;font-weight:600">Edit details</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">${await internForm(i)}<button class="btn" style="align-self:flex-start" data-act="in-save" data-id="${i.id}">Save details</button></div></details>
   </div>`,true);
+}
+
+function exportInternsXlsx(){
+  if(!window.XLSX){toast("The Excel library didn't load. Reload the page and try again.");return}
+  const all=S.d.interns||[];if(!all.length){toast('No applicants to export yet');return}
+  const fd=d=>d?String(d).slice(0,10):'';
+  const row=i=>{const at=i.attempts||[];const last=at[at.length-1];const came=at.filter(a=>a.result!=='noshow').length;
+    return {'Name':i.name,'Mobile':i.phone||'','Course':i.course||'','Round':i.round||'','Canva portfolio':i.portfolio||'','Decision':ISTATUS[i.status]?.t||i.status,
+      'Decision reason':i.decision_note||'','Decided on':fd(i.decided_at),'Times attended':came,'No-shows':at.length-came,'First interview':at[0]?fd(at[0].date):'',
+      'Last interview':last?fd(last.date):'','Last result':last?(RESULTS[last.result]?.t||last.result):'','Last comments':last?last.comment||'':'',
+      'Now a sales agent':i.agent_id?'Yes':'No','Agent account':i.agent_id?pname(i.agent_id):'','Notes':i.notes||'','Added on':fd(i.created_at)}};
+  const sheet=(rows,widths)=>{const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{}]);if(rows.length){const keys=Object.keys(rows[0]);ws['!cols']=keys.map(k=>({wch:widths&&widths[k]||Math.min(45,Math.max(k.length+2,...rows.map(r=>String(r[k]??'').length+2)))}));ws['!autofilter']={ref:ws['!ref']}}return ws};
+  const by=st=>all.filter(i=>i.status===st).sort((a,b)=>(b.decided_at||'').localeCompare(a.decided_at||'')).map(row);
+  const wb=XLSX.utils.book_new();
+  const summary=[{'':'Applicants','Count':all.length},{'':'Accepted','Count':all.filter(i=>i.status==='accepted').length},{'':'Rejected','Count':all.filter(i=>i.status==='rejected').length},{'':'Under review','Count':all.filter(i=>i.status==='pending').length},{'':'Became sales agents','Count':all.filter(i=>i.agent_id).length},{'':'Exported on','Count':today()}];
+  XLSX.utils.book_append_sheet(wb,sheet(summary),'Summary');
+  XLSX.utils.book_append_sheet(wb,sheet(by('accepted')),'Accepted');
+  XLSX.utils.book_append_sheet(wb,sheet(by('rejected')),'Rejected');
+  XLSX.utils.book_append_sheet(wb,sheet(by('pending')),'Under review');
+  XLSX.utils.book_append_sheet(wb,sheet(all.map(row)),'All applicants');
+  const log=[];all.forEach(i=>(i.attempts||[]).forEach((a,k)=>log.push({'Applicant':i.name,'Mobile':i.phone||'','Course':i.course||'','Interview #':k+1,'Date':fd(a.date),'Interviewer':a.interviewer||'','Result':RESULTS[a.result]?.t||a.result,'Comments':a.comment||'','Current decision':ISTATUS[i.status]?.t||i.status})));
+  log.sort((a,b)=>a['Applicant'].localeCompare(b['Applicant'])||a['Interview #']-b['Interview #']);
+  XLSX.utils.book_append_sheet(wb,sheet(log),'Interview log');
+  XLSX.writeFile(wb,'interviews-'+today()+'.xlsx');toast('Excel file downloaded ✓');
 }
 
 /* ================= team & accounts ================= */
@@ -970,7 +1006,7 @@ async function createAccount(){
     await Q(S.sb.from('profiles').insert({id:u.id,...prof}));
     if(S.modal.prefill?.internId)await Q(S.sb.from('interns').update({agent_id:u.id,updated_at:nowISO()}).eq('id',S.modal.prefill.internId));
     await loadRef();
-    const msg=`Sales Desk\n${location.origin+location.pathname}\nEmail: ${email}\nPassword: ${pw}`;
+    const msg=`${brand().name}\n${location.origin+location.pathname}\nEmail: ${email}\nPassword: ${pw}`;
     S.modal={type:'created'};
     openModal(`${mhead('Account created ✓')}<div class="mb"><p>Send these login details to <b class="ar">${esc(name)}</b>. They can change the password after signing in.</p><pre style="background:var(--bg);padding:12px;border-radius:10px;margin:0;white-space:pre-wrap" id="cred">${esc(msg)}</pre></div>
      <div class="mf"><button class="btn pri" data-act="copy-cred">Copy login details</button><button class="btn" data-act="close">Done</button></div>`);
@@ -1069,7 +1105,14 @@ async function addLog(type,note,ded,to){
 /* ================= settings ================= */
 function settingsView(){
   const wo=weeklyOff();
+  const bd=brand();
   return `<div class="head"><div><h1>Settings</h1></div></div>
+  <div class="card"><h2>Branding</h2><div class="row" style="align-items:flex-start;gap:18px">
+   <div style="background:var(--rail);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;min-width:230px"><img id="br-prev" src="${esc(S.brandLogo!=null?(S.brandLogo||DEFAULT_LOGO):logoSrc())}" alt="" style="width:46px;height:46px;object-fit:contain"><div style="color:#fff;display:flex;flex-direction:column"><b id="br-pn" style="font-family:var(--font-display)">${esc(bd.name)}</b><span id="br-ps" style="font-size:12px;opacity:.7">${esc(bd.sub)}</span></div></div>
+   <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:10px">
+    <div class="row"><div class="field"><label for="br-name">System name</label><input class="inp" id="br-name" data-in="brand" value="${esc(bd.name)}"></div><div class="field"><label for="br-sub">Line under the name</label><input class="inp" id="br-sub" data-in="brand" value="${esc(bd.sub)}"></div></div>
+    <div class="row"><label class="btn sm"><input type="file" id="br-logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>Upload a new logo</label><button class="btn sm ghost" data-act="br-default">Use the default logo</button><span class="hint">PNG with a transparent background looks best.</span></div>
+    <div><button class="btn pri" data-act="br-save">Save branding</button></div></div></div></div>
   <div class="card" style="padding:0"><div style="padding:16px 16px 8px" class="row"><h2>Courses & prices</h2><div class="sp"></div><button class="btn sm" data-act="course-new">+ Add course</button></div>
    <div style="overflow-x:auto"><table><thead><tr><th>Course</th><th>Price (EGP)</th><th>Active</th><th></th></tr></thead><tbody>
    ${S.courses.map(c=>`<tr><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.price??'')}" style="width:120px"></td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm" data-act="course-save" data-id="${c.id}">Save</button></td></tr>`).join('')}
@@ -1098,6 +1141,7 @@ document.addEventListener('submit',e=>{if(e.target.id==='login-form'){e.preventD
 document.addEventListener('input',e=>{
   const el=e.target;const k=el.dataset.in;
   if(k==='q'){S.f.q=el.value;S.f.page=0;clearTimeout(qT);qT=setTimeout(loadView,350)}
+  else if(k==='brand'){$('#br-pn').textContent=$('#br-name').value;$('#br-ps').textContent=$('#br-sub').value}
   else if(k==='inq'){S.inf.q=el.value;clearTimeout(qT);qT=setTimeout(render,250)}
   else if(k==='imp'){const s=impState();s.text=el.value;clearTimeout(qT);qT=setTimeout(()=>{s.rows=rowsToLeads(parseTable(s.text));s.fileName='';render();checkDups()},500)}
 });
@@ -1113,6 +1157,7 @@ document.addEventListener('change',async e=>{
   if(el.dataset.actCh==='py-reason'){const b=resBalance(S.modal.res);if(el.value==='overpaid'){$('#py-amt').value=b.over||'';$('#py-close').checked=false}else if(el.value==='cancelled'){$('#py-amt').value=b.paid||'';$('#py-close').checked=true}return}
   if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value);return}
   if(el.dataset.actCh==='i-lead'){const o=el.selectedOptions[0];if(o&&o.value){$('#i-name').value=o.dataset.n||'';$('#i-phone').value=o.dataset.p||'';$('#i-course').value=o.dataset.c||''}return}
+  if(el.id==='br-logo'&&el.files[0]){const f=el.files[0];const img=new Image();img.onload=()=>{const c=document.createElement('canvas');const sc=Math.min(1,256/Math.max(img.width,img.height));c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);c.getContext('2d').drawImage(img,0,0,c.width,c.height);S.brandLogo=c.toDataURL('image/png');$('#br-prev').src=S.brandLogo;URL.revokeObjectURL(img.src)};img.onerror=()=>toast("Couldn't read that image");img.src=URL.createObjectURL(f);return}
   if(el.id==='imp-file'&&el.files[0]){readFile(el.files[0]);return}
   if(!k)return;
   if(k==='period'){S.period=el.value;S.f.page=0;loadView()}
@@ -1179,6 +1224,7 @@ document.addEventListener('click',async e=>{
   else if(act==='rep-csv'){const R=S.d.reports?.sum||[];csvDownload('daily-reports-'+today()+'.csv',[['Date','Agent','Leads in','No answer','WhatsApp','Max 2 calls','Qualified','Not qualified','Governorates','Cases','Reservations','Reserved leads came in on','Checklist done','Notes'],...R.map(r=>[r.report_date,pname(r.agent_id),r.received,r.no_answer,r.want_wp,r.max_twice?'Yes':'No',r.qualified,r.not_qualified,(r.governorates||[]).join(' / '),r.cases,r.reservations,r.res_lead_dates,Object.values(r.checklist||{}).filter(Boolean).length+'/'+(r.checklist_items||checklist()).length,r.notes])])}
   // interviews
   else if(act==='in-st'){S.inf.st=a.dataset.k;render()}
+  else if(act==='in-xlsx')exportInternsXlsx();
   else if(act==='in-new')internNewModal();
   else if(act==='in-open')internModal(id);
   else if(act==='in-create'){const v=readInternForm();if(!v.name){toast('Enter a name');return}const lid=$('#i-lead')?.value||null;
@@ -1219,6 +1265,9 @@ document.addEventListener('click',async e=>{
   else if(act==='course-save'){const v={name:$('#co-n-'+id).value.trim(),price:$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();render()}}
   else if(act==='group-new'){if(!S.courses.length){toast('Add a course first');return}if(await guard(()=>Q(S.sb.from('groups').insert({course:S.courses[0].name,name:'Round '})),'Group added — fill it in and save')){await loadRef();render()}}
   else if(act==='group-save'){const v={course:$('#gr-c-'+id).value,name:$('#gr-n-'+id).value.trim(),location:$('#gr-l-'+id).value.trim()||null,start_date:$('#gr-s-'+id).value||null,capacity:$('#gr-k-'+id).value===''?null:+$('#gr-k-'+id).value,active:$('#gr-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('groups').update(v).eq('id',id)),'Saved ✓')){await loadRef();render()}}
+  else if(act==='br-default'){S.brandLogo='';$('#br-prev').src=DEFAULT_LOGO}
+  else if(act==='br-save'){const cur=brand();const v={name:$('#br-name').value.trim()||'Sales Department',sub:$('#br-sub').value.trim(),logo:S.brandLogo!=null?S.brandLogo:(S.settings.brand&&S.settings.brand.logo)||''};
+    if(await guard(()=>Q(S.sb.from('settings').upsert([{key:'brand',value:v}])),'Branding saved ✓')){S.brandLogo=null;S.brandPub=v;await loadRef();applyBrand();render()}}
   else if(act==='lt-new'){$('#lt-body').insertAdjacentHTML('beforeend',`<tr data-key=""><td><input class="inp lt-label" placeholder="e.g. Late to shift" aria-label="Name"></td><td><select class="inp lt-kind" aria-label="Kind"><option value="violation">Violation</option><option value="leave">Leave</option></select></td><td><input type="number" step="0.25" min="0" class="inp num lt-ded" value="0" style="width:110px" aria-label="Deduction"></td><td><button class="btn sm ghost" data-act="lt-del" aria-label="Remove">✕</button></td></tr>`)}
   else if(act==='lt-del'){a.closest('tr').remove()}
   else if(act==='set-save'){const lines=s=>$(s).value.split('\n').map(x=>x.trim()).filter(Boolean);
