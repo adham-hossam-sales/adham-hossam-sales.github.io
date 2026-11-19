@@ -170,7 +170,19 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .slog th.dt,.slog td.dt{position:sticky;left:0;z-index:3;background:var(--surface);min-width:90px;border-right:1px solid var(--line)}
 .slog th.dt{background:var(--bg);z-index:4}
 .slog td{min-width:150px;padding:6px 8px;border-left:1px solid var(--line);font-size:12.5px}
-.slog tr.off td:not(.dt){background:var(--bg)}
+.slog td.offc{background:var(--bg)} .slog td.offc:empty::after{content:'Day off';color:var(--muted);font-size:11px}
+.pcal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.pcal .wd{font-size:11px;font-weight:600;color:var(--muted);text-align:center;padding:2px 0}
+.pc{min-height:78px;border-radius:9px;padding:6px 7px;font-size:11.5px;display:flex;flex-direction:column;gap:2px;border:1px solid transparent;overflow:hidden}
+.pc b.n{font-size:13px}.pc .st{font-weight:600}.pc .lg{font-size:11px;padding:2px 5px;margin:1px 0}
+.pc.d-N,.pc.d-F{border-color:var(--line)} .pc.blank{background:none;border:0}
+.pc.today{outline:2px solid var(--accent);outline-offset:-2px}
+.pstats{display:flex;flex-wrap:wrap;gap:8px}.pstats div{background:var(--bg);border-radius:10px;padding:8px 12px;min-width:92px}.pstats b{display:block;font-size:18px}.pstats span{font-size:12px;color:var(--muted)}
+.cal td.nm a{color:inherit;text-decoration:underline dotted;cursor:pointer}
+[data-sv] .sv-flag{display:none} [data-sv].dirty .sv-flag{display:inline-flex}
+.card[data-sv].dirty{box-shadow:0 0 0 2px var(--warn-soft);border-color:var(--warn)}
+tr[data-sv].dirty td{background:var(--warn-soft)}
+.sv-row{display:flex;align-items:center;gap:10px;margin-top:10px}
 .slog td.na{background:repeating-linear-gradient(45deg,transparent 0 6px,var(--bg) 6px 12px)}
 .slog td.cell{cursor:pointer} .slog td.cell:hover{outline:2px solid var(--accent);outline-offset:-2px}
 .lg{display:block;border-radius:6px;padding:3px 7px;margin:2px 0;font-weight:600;font-size:12px}
@@ -308,6 +320,10 @@ const courseNames=()=>S.courses.filter(c=>c.active).map(c=>c.name);
 const platforms=()=>setting('platforms',['Instagram','Facebook','TikTok']);
 const checklist=()=>setting('checklist',[]);
 const weeklyOff=()=>setting('weekly_off',[5]);
+const staffOff=()=>setting('staff_off',{})||{};
+const offDaysOf=uid=>{const m=staffOff();return Array.isArray(m[uid])?m[uid]:weeklyOff()};
+const offLabel=uid=>{const o=offDaysOf(uid);return o.length?o.map(x=>DOW[x]).join(', '):'No day off'};
+const svBtn=(k,label,extra='')=>`<div class="sv-row"><button class="btn pri sm" data-act="sv" data-k="${k}" ${extra}>${label||'Save'}</button><span class="pill amber sv-flag">Not saved yet</span></div>`;
 const groupName=id=>{const g=S.groups.find(x=>x.id===id);return g?`${g.name}${g.location?' · '+g.location:''}${g.schedule?' · '+g.schedule:''}`:'—'};
 
 /* ================= auth ================= */
@@ -1026,12 +1042,12 @@ async function loadAtt(){
   S.d.att={from,to,act,log,reps};
 }
 function attData(){
-  const D=S.d.att;const off=weeklyOff();const t=today();const days=[];for(let d=D.from;d<=D.to;d=addDays(d,1))days.push(d);
+  const D=S.d.att;const t=today();const days=[];for(let d=D.from;d<=D.to;d=addDays(d,1))days.push(d);
   const act={};D.act.forEach(a=>{(act[a.user_id]=act[a.user_id]||{})[a.day]=a.calls});
   const rep={};D.reps.forEach(r=>{(rep[r.agent_id]=rep[r.agent_id]||{})[r.report_date]=r.created_at});
   const people=visibleStaff().filter(p=>p.role!=='admin'&&p.start_date<=D.to&&(!p.end_date||p.end_date>=D.from)).sort((a,b)=>a.start_date.localeCompare(b.start_date)||a.name.localeCompare(b.name));
   return {days,people:people.map(p=>{
-    const lg=D.log.filter(l=>l.user_id===p.id);
+    const lg=D.log.filter(l=>l.user_id===p.id);const off=offDaysOf(p.id);
     const s={employed:0,off:0,leave:0,expected:0,present:0,absent:0,offWorked:0,reports:Object.keys(rep[p.id]||{}).length,missing:0,late:0,violations:0,deduct:0,calls:0,leaveTypes:{}};
     lg.forEach(l=>{s.deduct+=+l.deduction||0;if(l.kind==='violation')s.violations++});
     const byDay={};
@@ -1063,22 +1079,38 @@ function attView(){
   if(!people.length)return head+'<div class="empty">Nobody was on the team this month</div>';
   if(tab==='sum')return head+`<div class="tbl-wrap"><table class="cards"><thead><tr><th>Name</th><th>Start</th><th>End</th><th>Days employed</th><th>Weekly off</th><th>Leave</th><th>Working days</th><th>Worked</th><th>Absent</th><th>Reports</th><th>Missing reports</th><th>Late reports</th><th>Violations</th><th>Deduction (days)</th><th>Salary</th><th>Deduction (EGP)</th><th>Net</th></tr></thead><tbody>
    ${people.map(({p,s,daySalary,dedEGP})=>`<tr><td data-l="Name"><b class="ar">${esc(p.name)}</b>${p.active?'':' <span class="pill red">Left</span>'}</td><td data-l="Start" class="num">${fmtDay(p.start_date)}</td><td data-l="End" class="num">${p.end_date?fmtDay(p.end_date):'—'}</td>
-    <td class="n" data-l="Days employed">${s.employed}</td><td class="n" data-l="Weekly off">${s.off}</td><td class="n" data-l="Leave" title="${esc(Object.entries(s.leaveTypes).map(([k,v])=>k+': '+v).join(', '))}">${s.leave}${s.leave?`<span class="s">${esc(Object.entries(s.leaveTypes).map(([k,v])=>k+' '+v).join(', '))}</span>`:''}</td><td class="n" data-l="Working days">${s.expected}</td>
+    <td class="n" data-l="Days employed">${s.employed}</td><td class="n" data-l="Weekly off">${s.off}<span class="s">${esc(offLabel(p.id))}</span></td><td class="n" data-l="Leave" title="${esc(Object.entries(s.leaveTypes).map(([k,v])=>k+': '+v).join(', '))}">${s.leave}${s.leave?`<span class="s">${esc(Object.entries(s.leaveTypes).map(([k,v])=>k+' '+v).join(', '))}</span>`:''}</td><td class="n" data-l="Working days">${s.expected}</td>
     <td class="n" data-l="Worked"><b>${s.present}</b></td><td class="n" data-l="Absent">${s.absent?`<span class="pill red">${s.absent}</span>`:'0'}</td><td class="n" data-l="Reports">${s.reports}</td><td class="n" data-l="Missing reports">${s.missing?`<span class="pill amber">${s.missing}</span>`:'0'}</td><td class="n" data-l="Late reports">${s.late?`<span class="pill amber">${s.late}</span>`:'0'}</td>
     <td class="n" data-l="Violations">${s.violations}</td><td class="n" data-l="Deduction (days)"><b>${nf(s.deduct)}</b></td><td class="n" data-l="Salary">${p.salary?egp(p.salary):'—'}</td><td class="n" data-l="Deduction (EGP)">${daySalary?egp(dedEGP):'—'}</td><td class="n" data-l="Net"><b>${p.salary?egp(p.salary-dedEGP):'—'}</b></td></tr>`).join('')}
    </tbody></table></div><div class="hint">Deduction (EGP) = deduction days × monthly salary ÷ 30. Missing and late reports are detected by the system; they count toward deductions once you add them to the log. Set salaries on the Team & Accounts page.</div>`;
   if(tab==='cal'){const L={A:'✓',X:'✕',L:'L',O:'',W:'✓',N:'',F:'',P:'·'};
-    return head+`<div class="legend"><span><i class="d-A"></i>Worked</span><span><i class="d-X"></i>Absent</span><span><i class="d-L"></i>Leave</span><span><i class="d-O" style="border:1px solid var(--line)"></i>Weekly off (${weeklyOff().map(x=>DOW[x]).join(', ')||'none'})</span><span><i class="d-W"></i>Worked on day off</span><span><i class="d-P"></i>Today, no activity yet</span></div>
+    const who=mine?S.me.id:(S.att.who||'');const one=who&&people.find(x=>x.p.id===who);
+    const pick=mine?'':`<div class="row" style="margin-bottom:4px"><label for="att-who" class="hint">Show</label><select class="inp" id="att-who" data-ch="att-who" style="max-width:260px"><option value="">Everyone</option>${people.map(({p})=>`<option value="${p.id}" ${who===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>`;
+    if(one)return head+pick+personCal(one);
+    if(mine)return head+'<div class="empty">You were not on the team this month</div>';
+    return head+pick+`<div class="legend"><span><i class="d-A"></i>Worked</span><span><i class="d-X"></i>Absent</span><span><i class="d-L"></i>Leave</span><span><i class="d-O" style="border:1px solid var(--line)"></i>Weekly day off (each person's own day)</span><span><i class="d-W"></i>Worked on day off</span><span><i class="d-P"></i>Today, no activity yet</span></div>
     <div class="card" style="padding:12px;overflow-x:auto"><table class="cal"><thead><tr><th class="nm"></th>${days.map(d=>{const x=parseD(d);return `<th>${x.getDate()}<br><span style="font-weight:400">${DOW[x.getDay()][0]}</span></th>`}).join('')}</tr></thead><tbody>
-    ${people.map(({p,cells})=>`<tr><td class="nm ar">${esc(p.name)}</td>${cells.map(c=>`<td class="d d-${c.state}" title="${fmtDay(c.d)}">${L[c.state]}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
+    ${people.map(({p,cells})=>`<tr><td class="nm ar"><a data-act="att-who" data-id="${p.id}">${esc(p.name)}</a> <span class="hint">(${esc(offLabel(p.id))})</span></td>${cells.map(c=>`<td class="d d-${c.state}" title="${fmtDay(c.d)}">${L[c.state]}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
   // daily log grid, like the shifts sheet: dates down, people across
   const t=today();const canEdit=isMgr();
   return head+`<div class="legend"><span><i class="d-L"></i>Leave</span><span><i class="d-X"></i>Violation</span><span><i style="border:1px dashed var(--muted)"></i>Flagged by the system</span><span><i class="d-O" style="border:1px solid var(--line)"></i>Weekly off</span></div>
-  <div class="tbl-wrap" style="max-height:70vh"><table class="slog"><thead><tr><th class="dt">Date</th>${people.map(({p})=>`<th><span class="ar">${esc(p.name)}</span><span class="s">since ${dm(p.start_date)}</span></th>`).join('')}</tr></thead><tbody>
-  ${days.filter(d=>d<=t).reverse().map(d=>{const x=parseD(d);const off=weeklyOff().includes(x.getDay());return `<tr class="${off?'off':''}"><td class="dt"><b>${x.getDate()} ${x.toLocaleDateString('en-GB',{month:'short'})}</b><span class="s">${DOW[x.getDay()]}</span></td>${people.map(({p,byDay})=>{const c=byDay[d];
-    if(c.state==='N')return '<td class="na"></td>';
-    return `<td class="${canEdit?'cell':''}" ${canEdit?`data-act="log-cell" data-id="${p.id}" data-d="${d}"`:''}>${c.entries.map(e=>{const ty=logType(e.type);return `<span class="lg ${e.kind}" title="${esc(ty.label)}${e.deduction?' · −'+e.deduction+' day':''}">${esc(ty.label)}${e.note?`<em class="ar" dir="auto">${esc(e.note)}</em>`:''}${+e.deduction?`<b>−${nf(e.deduction)}</b>`:''}</span>`}).join('')}${c.auto.map(k=>`<span class="lg auto">${esc(logType(k).label)}</span>`).join('')}</td>`}).join('')}</tr>`}).join('')}
+  <div class="tbl-wrap" style="max-height:70vh"><table class="slog"><thead><tr><th class="dt">Date</th>${people.map(({p})=>`<th><span class="ar">${esc(p.name)}</span><span class="s">since ${dm(p.start_date)} · off ${esc(offLabel(p.id))}</span></th>`).join('')}</tr></thead><tbody>
+  ${days.filter(d=>d<=t).reverse().map(d=>{const x=parseD(d);return `<tr><td class="dt"><b>${x.getDate()} ${x.toLocaleDateString('en-GB',{month:'short'})}</b><span class="s">${DOW[x.getDay()]}</span></td>${people.map(({p,byDay})=>{const c=byDay[d];
+    if(c.state==='N')return '<td class="na"></td>';const isOff=offDaysOf(p.id).includes(x.getDay());
+    return `<td class="${canEdit?'cell':''} ${isOff?'offc':''}" ${canEdit?`data-act="log-cell" data-id="${p.id}" data-d="${d}"`:''}>${c.entries.map(e=>{const ty=logType(e.type);return `<span class="lg ${e.kind}" title="${esc(ty.label)}${e.deduction?' · −'+e.deduction+' day':''}">${esc(ty.label)}${e.note?`<em class="ar" dir="auto">${esc(e.note)}</em>`:''}${+e.deduction?`<b>−${nf(e.deduction)}</b>`:''}</span>`}).join('')}${c.auto.map(k=>`<span class="lg auto">${esc(logType(k).label)}</span>`).join('')}</td>`}).join('')}</tr>`}).join('')}
   </tbody></table></div>${canEdit?'<div class="hint">Click any cell to add leave, a violation or a note for that person and day.</div>':''}`;
+}
+function personCal(row){
+  const {p,cells,s,daySalary,dedEGP}=row;const t=today();const canEdit=isMgr();
+  const ST={A:'Worked',X:'Absent',L:'Leave',O:'Day off',W:'Worked on day off',P:'Today',F:'',N:'Not on team'};
+  const order=[6,0,1,2,3,4,5];const lead=order.indexOf(parseD(cells[0].d).getDay());
+  const box=c=>{const x=parseD(c.d);const ok=canEdit&&c.state!=='N';
+    return `<div class="pc d-${c.state} ${c.d===t?'today':''}" ${ok?`data-act="log-cell" data-id="${p.id}" data-d="${c.d}" style="cursor:pointer"`:''} title="${fmtDay(c.d)}"><b class="n">${x.getDate()}</b>${ST[c.state]?`<span class="st">${ST[c.state]}</span>`:''}${c.entries.filter(e=>e.kind!=='leave'||c.state!=='L'||true).map(e=>`<span class="lg ${e.kind}">${esc(logType(e.type).label)}${+e.deduction?` −${nf(e.deduction)}`:''}</span>`).join('')}${c.auto.map(k=>`<span class="lg auto">${esc(logType(k).label)}</span>`).join('')}</div>`};
+  const st=(n,l)=>`<div><b>${n}</b><span>${l}</span></div>`;
+  return `<div class="card" style="display:flex;flex-direction:column;gap:12px"><div class="row"><div><h2 class="ar">${esc(p.name)}</h2><div class="hint">Weekly day off: <b>${esc(offLabel(p.id))}</b> · On the team since ${fmtDay(p.start_date)}${p.end_date?' until '+fmtDay(p.end_date):''}</div></div></div>
+   <div class="pstats">${st(s.present,'Worked')}${st(s.absent,'Absent')}${st(s.leave,'Leave')}${st(s.off,'Days off')}${st(s.offWorked,'Worked on day off')}${st(s.violations,'Violations')}${st(nf(s.deduct),'Deduction (days)')}${daySalary?st(egp(dedEGP),'Deduction (EGP)'):''}</div>
+   <div class="pcal">${order.map(i=>`<div class="wd">${DOW[i]}</div>`).join('')}${'<div class="pc blank"></div>'.repeat(lead)}${cells.map(box).join('')}</div>
+   ${canEdit?'<div class="hint">Click a day to add leave, a violation or a note.</div>':''}</div>`;
 }
 async function logCellModal(uid,d){
   const p=S.profiles[uid];const D=S.d.att;const {people}=attData();const row=people.find(x=>x.p.id===uid);const c=row?row.byDay[d]:{entries:[],auto:[]};
@@ -1104,30 +1136,39 @@ async function addLog(type,note,ded,to){
 
 /* ================= settings ================= */
 function settingsView(){
-  const wo=weeklyOff();
   const bd=brand();
   return `<div class="head"><div><h1>Settings</h1></div></div>
-  <div class="card"><h2>Branding</h2><div class="row" style="align-items:flex-start;gap:18px">
+  <div class="card" data-sv><h2>Branding</h2><div class="row" style="align-items:flex-start;gap:18px">
    <div style="background:var(--rail);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;min-width:230px"><img id="br-prev" src="${esc(S.brandLogo!=null?(S.brandLogo||DEFAULT_LOGO):logoSrc())}" alt="" style="width:46px;height:46px;object-fit:contain"><div style="color:#fff;display:flex;flex-direction:column"><b id="br-pn" style="font-family:var(--font-display)">${esc(bd.name)}</b><span id="br-ps" style="font-size:12px;opacity:.7">${esc(bd.sub)}</span></div></div>
    <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:10px">
     <div class="row"><div class="field"><label for="br-name">System name</label><input class="inp" id="br-name" data-in="brand" value="${esc(bd.name)}"></div><div class="field"><label for="br-sub">Line under the name</label><input class="inp" id="br-sub" data-in="brand" value="${esc(bd.sub)}"></div></div>
     <div class="row"><label class="btn sm"><input type="file" id="br-logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>Upload a new logo</label><button class="btn sm ghost" data-act="br-default">Use the default logo</button><span class="hint">PNG with a transparent background looks best.</span></div>
-    <div><button class="btn pri" data-act="br-save">Save branding</button></div></div></div></div>
+    <div class="sv-row"><button class="btn pri" data-act="br-save">Save branding</button><span class="pill amber sv-flag">Not saved yet</span></div></div></div></div>
   <div class="card" style="padding:0"><div style="padding:16px 16px 8px" class="row"><h2>Courses & prices</h2><div class="sp"></div><button class="btn sm" data-act="course-new">+ Add course</button></div>
    <div style="overflow-x:auto"><table><thead><tr><th>Course</th><th>Price (EGP)</th><th>Active</th><th></th></tr></thead><tbody>
-   ${S.courses.map(c=>`<tr><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.price??'')}" style="width:120px"></td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm" data-act="course-save" data-id="${c.id}">Save</button></td></tr>`).join('')}
+   ${S.courses.map(c=>`<tr data-sv><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.price??'')}" style="width:120px"></td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm pri" data-act="course-save" data-id="${c.id}">Save</button> <span class="pill amber sv-flag">Not saved</span></td></tr>`).join('')}
    </tbody></table></div></div>
 ${groupsView()}
-  <div class="grid2"><div class="card"><h2>Channels</h2><textarea class="inp" id="set-platforms" rows="7">${esc(platforms().join('\n'))}</textarea><div class="hint">One per line</div></div>
-   <div class="card"><h2>Weekly day off</h2><div class="chips">${DOW.map((d,i)=>`<label class="chip ${wo.includes(i)?'on':''}"><input type="checkbox" class="wo" value="${i}" ${wo.includes(i)?'checked':''} data-act="chip">${d}</label>`).join('')}</div><div class="hint" style="margin-top:8px">Used by the attendance table.</div></div></div>
-  <div class="card" style="padding:0"><div style="padding:16px 16px 8px" class="row"><h2>Leave & violation types</h2><div class="sp"></div><button class="btn sm" data-act="lt-new">+ Add type</button></div>
+  <div class="card" data-sv><h2>Channels</h2><div class="hint" style="margin-bottom:8px">Where leads come from (Instagram, Facebook, TikTok…). One per line. Changes only apply after you click Save.</div><textarea class="inp" id="set-platforms" rows="6">${esc(platforms().join('\n'))}</textarea>${svBtn('platforms','Save channels')}</div>
+  ${offView()}
+  <div class="card" style="padding:0" data-sv><div style="padding:16px 16px 8px" class="row"><h2>Leave & violation types</h2><div class="sp"></div><button class="btn sm" data-act="lt-new">+ Add type</button></div>
    <div class="hint" style="padding:0 16px 8px">Used in Shifts & Deductions. The deduction is in days of salary and can be changed on each entry.</div>
    <div style="overflow-x:auto"><table><thead><tr><th>Name</th><th>Kind</th><th>Default deduction (days)</th><th></th></tr></thead><tbody id="lt-body">
    ${logTypes().map((t,i)=>`<tr data-key="${esc(t.key)}"><td><input class="inp lt-label" value="${esc(t.label)}" aria-label="Name"></td><td><select class="inp lt-kind" aria-label="Kind"><option value="leave" ${t.kind==='leave'?'selected':''}>Leave</option><option value="violation" ${t.kind==='violation'?'selected':''}>Violation</option></select></td><td><input type="number" step="0.25" min="0" class="inp num lt-ded" value="${esc(t.deduct)}" style="width:110px" aria-label="Deduction"></td><td><button class="btn sm ghost" data-act="lt-del" aria-label="Remove">✕</button></td></tr>`).join('')}
-   </tbody></table></div></div>
-  <div class="card"><h2>Daily report deadline</h2><div class="row"><input type="time" class="inp" id="set-deadline" value="${esc(setting('report_deadline','23:00'))}"><span class="hint">A report added after this time on its day is flagged as late.</span></div></div>
-  <div class="card"><h2>Daily report checklist</h2><textarea class="inp ar" dir="auto" id="set-check" rows="11">${esc(checklist().join('\n'))}</textarea><div class="hint">One item per line</div></div>
-  <div><button class="btn pri" data-act="set-save">Save settings</button></div>`;
+   </tbody></table></div><div style="padding:0 16px 14px">${svBtn('log_types','Save types')}</div></div>
+  <div class="card" data-sv><h2>Daily report deadline</h2><div class="row"><input type="time" class="inp" id="set-deadline" value="${esc(setting('report_deadline','23:00'))}"><span class="hint">A report added after this time on its day is flagged as late.</span></div>${svBtn('report_deadline','Save deadline')}</div>
+  <div class="card" data-sv><h2>Daily report checklist</h2><textarea class="inp ar" dir="auto" id="set-check" rows="11">${esc(checklist().join('\n'))}</textarea><div class="hint">One item per line</div>${svBtn('checklist','Save checklist')}</div>
+  <div class="hint">Every section has its own Save button. Nothing changes until you click it.</div>`;
+}
+function offView(){
+  const def=weeklyOff();const m=staffOff();
+  const people=Object.values(S.profiles).filter(p=>p.role!=='admin'&&p.active).sort((a,b)=>a.name.localeCompare(b.name));
+  const sel=(id,cur,withDef)=>`<select class="inp" id="${id}" style="max-width:200px">${withDef?`<option value="def" ${cur==null?'selected':''}>Default (${esc(def.length?def.map(x=>DOW[x]).join(', '):'none')})</option>`:''}${[6,0,1,2,3,4,5].map(i=>`<option value="${i}" ${cur&&cur.length===1&&cur[0]===i?'selected':''}>${DOW[i]}</option>`).join('')}<option value="none" ${cur&&!cur.length?'selected':''}>No day off</option></select>`;
+  return `<div class="card" style="padding:0"><div style="padding:16px 16px 8px"><h2>Weekly day off</h2><div class="hint">Each person has their own day off. It decides which days count as off in Shifts & Deductions and in each person's calendar. Change a person's day, then click Save on their row.</div></div>
+   <div class="tbl-wrap"><table class="cards"><thead><tr><th>Name</th><th>Role</th><th>Day off</th><th></th></tr></thead><tbody>
+   ${people.map(p=>`<tr data-sv><td data-l="Name"><b class="ar">${esc(p.name)}</b></td><td data-l="Role">${ROLES[p.role]||esc(p.role)}</td><td data-l="Day off">${sel('off-'+p.id,Array.isArray(m[p.id])?m[p.id]:null,true)}</td><td><button class="btn sm pri" data-act="off-save" data-id="${p.id}">Save</button> <span class="pill amber sv-flag">Not saved</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">No active team members yet</td></tr>'}
+   <tr data-sv><td data-l="Name"><b>Default</b><div class="hint">For anyone without their own day</div></td><td></td><td data-l="Day off">${sel('off-def',def,false)}</td><td><button class="btn sm pri" data-act="off-def-save">Save</button> <span class="pill amber sv-flag">Not saved</span></td></tr>
+   </tbody></table></div></div>`;
 }
 
 /* ================= modal ================= */
@@ -1138,15 +1179,17 @@ const mhead=t=>`<div class="mh"><h2>${t}</h2><button class="btn ghost sm" data-a
 /* ================= events ================= */
 let qT=null;
 document.addEventListener('submit',e=>{if(e.target.id==='login-form'){e.preventDefault();doLogin()}});
+const markDirty=el=>{const c=el&&el.closest&&el.closest('[data-sv]');if(c)c.classList.add('dirty')};
+const clearDirty=el=>{const c=el&&el.closest&&el.closest('[data-sv]');if(c)c.classList.remove('dirty')};
 document.addEventListener('input',e=>{
-  const el=e.target;const k=el.dataset.in;
+  const el=e.target;const k=el.dataset.in;markDirty(el);
   if(k==='q'){S.f.q=el.value;S.f.page=0;clearTimeout(qT);qT=setTimeout(loadView,350)}
   else if(k==='brand'){$('#br-pn').textContent=$('#br-name').value;$('#br-ps').textContent=$('#br-sub').value}
   else if(k==='inq'){S.inf.q=el.value;clearTimeout(qT);qT=setTimeout(render,250)}
   else if(k==='imp'){const s=impState();s.text=el.value;clearTimeout(qT);qT=setTimeout(()=>{s.rows=rowsToLeads(parseTable(s.text));s.fileName='';render();checkDups()},500)}
 });
 document.addEventListener('change',async e=>{
-  const el=e.target;const k=el.dataset.ch;
+  const el=e.target;const k=el.dataset.ch;markDirty(el);
   if(el.dataset.actCh==='c-st'){const v=el.value;const q=QUAL_DEFAULT[v];$('#c-q').value=q===true?'1':q===false?'0':'';
     const fu=$('#c-fu');if(['Call Later','No Answer','Not Available','Send Details WP','Possible Lead'].includes(v)&&!fu.value)fu.value=addDays(today(),1);
     if(['Reserved','Not Interested'].includes(v))fu.value='';if(v==='Reserved'&&!$('#c-gr').value)$('#c-gr').value='reserved';
@@ -1166,6 +1209,7 @@ document.addEventListener('change',async e=>{
   else if(k.startsWith('resf.')){S.resf[k.slice(5)]=el.value;loadView()}
   else if(k.startsWith('imp.')){impState()[k.slice(4)]=el.value;render()}
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
+  else if(k==='att-who'){S.att.who=el.value;render()}
   else if(k==='att-month'){S.att.month=el.value||today().slice(0,7);S.d.att=null;loadView()}
   else if(k==='res-status'){await guard(()=>Q(S.sb.from('reservations').update({status:el.value}).eq('id',el.dataset.id)),'Status updated ✓');loadView()}
 });
@@ -1251,6 +1295,7 @@ document.addEventListener('click',async e=>{
   else if(act==='st-setpw'){const pw=$('#s-newpw').value.trim();if(pw.length<8){toast('Use at least 8 characters');return}if(await guard(()=>Q(S.sb.rpc('admin_set_password',{p_user:id,p_password:pw})),'Password set ✓ — send it to them'))$('#s-newpw').value=''}
   // shifts & deductions
   else if(act==='att-tab'){S.att.tab=a.dataset.k;render()}
+  else if(act==='att-who'){S.att.who=id;render()}
   else if(act==='log-cell')logCellModal(id,a.dataset.d);
   else if(act==='log-add'){const ty=$('#lg-type').value;await addLog(ty,$('#lg-note').value.trim(),$('#lg-ded').value,$('#lg-to').value)}
   else if(act==='log-auto'){const k=a.dataset.k;await addLog(k,'Flagged by the system',logType(k).deduct,'')}
@@ -1262,18 +1307,27 @@ document.addEventListener('click',async e=>{
     csvDownload('shifts-deductions-'+S.att.month+'.csv',rows)}
   // settings
   else if(act==='course-new'){if(await guard(()=>Q(S.sb.from('courses').insert({name:'New course '+(S.courses.length+1)})),'Course added — rename it and save')){await loadRef();render()}}
-  else if(act==='course-save'){const v={name:$('#co-n-'+id).value.trim(),price:$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();render()}}
+  else if(act==='course-save'){const v={name:$('#co-n-'+id).value.trim(),price:$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();clearDirty(a)}}
   else if(act==='group-new'){if(!S.courses.length){toast('Add a course first');return}if(await guard(()=>Q(S.sb.from('groups').insert({course:S.courses[0].name,name:'Round '})),'Group added — fill it in and save')){await loadRef();render()}}
   else if(act==='group-save'){const v={course:$('#gr-c-'+id).value,name:$('#gr-n-'+id).value.trim(),location:$('#gr-l-'+id).value.trim()||null,start_date:$('#gr-s-'+id).value||null,capacity:$('#gr-k-'+id).value===''?null:+$('#gr-k-'+id).value,active:$('#gr-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('groups').update(v).eq('id',id)),'Saved ✓')){await loadRef();render()}}
   else if(act==='br-default'){S.brandLogo='';$('#br-prev').src=DEFAULT_LOGO}
   else if(act==='br-save'){const cur=brand();const v={name:$('#br-name').value.trim()||'Sales Department',sub:$('#br-sub').value.trim(),logo:S.brandLogo!=null?S.brandLogo:(S.settings.brand&&S.settings.brand.logo)||''};
-    if(await guard(()=>Q(S.sb.from('settings').upsert([{key:'brand',value:v}])),'Branding saved ✓')){S.brandLogo=null;S.brandPub=v;await loadRef();applyBrand();render()}}
-  else if(act==='lt-new'){$('#lt-body').insertAdjacentHTML('beforeend',`<tr data-key=""><td><input class="inp lt-label" placeholder="e.g. Late to shift" aria-label="Name"></td><td><select class="inp lt-kind" aria-label="Kind"><option value="violation">Violation</option><option value="leave">Leave</option></select></td><td><input type="number" step="0.25" min="0" class="inp num lt-ded" value="0" style="width:110px" aria-label="Deduction"></td><td><button class="btn sm ghost" data-act="lt-del" aria-label="Remove">✕</button></td></tr>`)}
-  else if(act==='lt-del'){a.closest('tr').remove()}
-  else if(act==='set-save'){const lines=s=>$(s).value.split('\n').map(x=>x.trim()).filter(Boolean);
-    const lt=[...document.querySelectorAll('#lt-body tr')].map(tr=>{const label=tr.querySelector('.lt-label').value.trim();return {key:tr.dataset.key||label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||('t'+Date.now()),label,kind:tr.querySelector('.lt-kind').value,deduct:+tr.querySelector('.lt-ded').value||0}}).filter(t=>t.label);
-    const rows=[{key:'platforms',value:lines('#set-platforms')},{key:'checklist',value:lines('#set-check')},{key:'weekly_off',value:[...document.querySelectorAll('.wo:checked')].map(x=>+x.value)},{key:'log_types',value:lt},{key:'report_deadline',value:$('#set-deadline').value||'23:00'}];
-    if(await guard(()=>Q(S.sb.from('settings').upsert(rows)),'Settings saved ✓')){await loadRef();render()}}
+    if(await guard(()=>Q(S.sb.from('settings').upsert([{key:'brand',value:v}])),'Branding saved ✓')){S.brandLogo=null;S.brandPub=v;S.settings.brand=v;applyBrand();clearDirty(a);if(!document.querySelector('[data-sv].dirty'))render()}}
+  else if(act==='lt-new'){markDirty(a);$('#lt-body').insertAdjacentHTML('beforeend',`<tr data-key=""><td><input class="inp lt-label" placeholder="e.g. Late to shift" aria-label="Name"></td><td><select class="inp lt-kind" aria-label="Kind"><option value="violation">Violation</option><option value="leave">Leave</option></select></td><td><input type="number" step="0.25" min="0" class="inp num lt-ded" value="0" style="width:110px" aria-label="Deduction"></td><td><button class="btn sm ghost" data-act="lt-del" aria-label="Remove">✕</button></td></tr>`)}
+  else if(act==='lt-del'){markDirty(a);a.closest('tr').remove()}
+  else if(act==='sv'){const k=a.dataset.k;const lines=q=>$(q).value.split('\n').map(x=>x.trim()).filter(Boolean);let value;
+    if(k==='platforms'){value=lines('#set-platforms');if(!value.length){toast('Add at least one channel');return}}
+    else if(k==='checklist')value=lines('#set-check');
+    else if(k==='report_deadline')value=$('#set-deadline').value||'23:00';
+    else if(k==='log_types'){value=[...document.querySelectorAll('#lt-body tr')].map(tr=>{const label=tr.querySelector('.lt-label').value.trim();return {key:tr.dataset.key||label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||('t'+Date.now()),label,kind:tr.querySelector('.lt-kind').value,deduct:+tr.querySelector('.lt-ded').value||0}}).filter(t=>t.label);
+      document.querySelectorAll('#lt-body tr').forEach((tr,n)=>{if(!tr.dataset.key&&value[n])tr.dataset.key=value[n].key})}
+    else return;
+    if(await guard(()=>Q(S.sb.from('settings').upsert([{key:k,value}])),'Saved ✓')){S.settings[k]=value;clearDirty(a)}}
+  else if(act==='off-save'||act==='off-def-save'){
+    const fresh=await Q(S.sb.from('settings').select('*').in('key',['staff_off','weekly_off']));if(fresh==null)return;fresh.forEach(r=>S.settings[r.key]=r.value);
+    let row;if(act==='off-save'){const v=$('#off-'+id).value;const m=Object.assign({},staffOff());if(v==='def')delete m[id];else m[id]=v==='none'?[]:[+v];row={key:'staff_off',value:m}}
+    else{const v=$('#off-def').value;row={key:'weekly_off',value:v==='none'?[]:[+v]}}
+    if(await guard(()=>Q(S.sb.from('settings').upsert([row])),'Day off saved ✓')){S.settings[row.key]=row.value;S.d.att=null;clearDirty(a)}}
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modal-root').innerHTML)closeModal()});
 document.addEventListener('dragover',e=>{const d=e.target.closest&&e.target.closest('#drop');if(d){e.preventDefault();d.classList.add('over')}});
