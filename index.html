@@ -210,7 +210,9 @@ const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent'};
 const RESULTS={passed:{t:'Passed',c:'green'},again:{t:'Come back again',c:'amber'},noshow:{t:'No-show',c:''},failed:{t:'Not a fit',c:'red'}};
 const ISTATUS={pending:{t:'Under review',c:'amber'},accepted:{t:'Accepted',c:'green'},rejected:{t:'Rejected',c:'red'}};
 const RSTATUS={Active:'green',Cancelled:'red',Refunded:'amber',Completed:'blue'};
-const METHODS=['Cash','Instapay','Wallet','Card','Bank transfer'];
+const METHODS=['Cash','InstaPay','Vodafone Cash','Etisalat Cash','Orange Cash','WE Pay','Card','Bank transfer'];
+const REFUND_METHODS=['Vodafone Cash','InstaPay','Etisalat Cash','Orange Cash','WE Pay','Bank transfer','Cash'];
+const REFUND_TYPES={overpaid:'Paid more than the course price',cancelled:'Cancelled: refund what they paid',other:'Other'};
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const PAGE=50;
 const PERIODS=[['today','Today'],['yesterday','Yesterday'],['7','Last 7 days'],['30','Last 30 days'],['month','This month'],['lastmonth','Last month'],['90','Last 90 days']];
@@ -353,8 +355,8 @@ function view(){
   if(!S.me)return authView();
   const me=S.me;
   const navs=me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
-    me.role==='tl'?[['dashboard','Dashboard'],['leads','Team Leads'],['import','Import Leads'],['reservations','Reservations'],['groups','Groups'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions']]:
-    [['dashboard','Dashboard'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['groups','Groups'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
+    me.role==='tl'?[['dashboard','Dashboard'],['leads','Team Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions']]:
+    [['dashboard','Dashboard'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
   if(!navs.find(n=>n[0]===S.view))S.view=navs[0][0];
   const showPeriod=['dashboard','leads','reservations'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
@@ -365,7 +367,7 @@ function view(){
    <div class="top"><button class="btn sm menu-btn" data-act="menu" aria-label="Menu">☰</button>
     ${showPeriod?`<select class="inp" id="period" data-ch="period" aria-label="Period">${PERIODS.map(([k,t])=>`<option value="${k}" ${S.period===k?'selected':''}>${t}</option>`).join('')}</select>`:''}
     <div class="sp"></div>${S.loading?'<span class="spin" aria-label="Loading"></span>':''}<button class="btn sm" data-act="refresh">Refresh</button></div>
-   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,groups:groupsView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView}[S.view]||dashView)()}</div>
+   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView}[S.view]||dashView)()}</div>
   </div></div>`;
 }
 function authView(){
@@ -386,7 +388,7 @@ function authView(){
 }
 async function loadView(){
   if(!S.me)return;S.loading=true;render();
-  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam}[S.view];if(fn)await fn()}
+  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam}[S.view];if(fn)await fn()}
   catch(e){console.error(e);toast(errMsg(e))}
   S.loading=false;render();
 }
@@ -500,7 +502,7 @@ function balancePill(r){const b=resBalance(r);if(b.closed)return `<span class="p
 function resCard(r,leadId){const b=resBalance(r);
   return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px"><div class="row" style="justify-content:space-between"><b><span class="num">${esc(r.code)}</span> · ${esc(r.course||'')}</b><span>${r.group_id?esc(groupName(r.group_id)):'<span class="pill amber">No group yet</span>'} <span class="pill ${RSTATUS[r.status]||''}">${esc(r.status)}</span></span></div>
    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kpi('Course price',b.price!=null?egp(b.price):'—')}${kpi('Paid (net)',egp(b.paid))}${kpi('Refunded',egp(r.refunded||0))}<div class="kpi"><span>Balance</span><div style="margin-top:6px">${balancePill(r)}</div></div></div>
-   ${(r.payments||[]).length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Note</th><th>By</th></tr></thead><tbody>${r.payments.map(p=>`<tr><td class="num">${fmtDay(p.pay_date)}</td><td>${p.kind==='refund'?`<span class="pill red">Refund${p.refund_reason?' · '+esc(p.refund_reason):''}</span>`:'<span class="pill green">Payment</span>'}</td><td class="n">${p.kind==='refund'?'−':''}${egp(p.amount)}</td><td>${esc(p.method||'')}</td><td class="ar" dir="auto">${esc(p.note||'')}</td><td class="ar">${esc(pname(p.by))}</td></tr>`).join('')}</tbody></table></div>`:''}
+   ${(r.payments||[]).length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Note</th><th>By</th></tr></thead><tbody>${r.payments.map(p=>`<tr><td class="num">${fmtDay(p.pay_date)}</td><td>${p.kind==='refund'?`<span class="pill red">Refund${p.refund_reason?' · '+esc(p.refund_reason):''}</span>`:'<span class="pill green">Payment</span>'}</td><td class="n">${p.kind==='refund'?'−':''}${egp(p.amount)}</td><td>${esc(p.method||'')}${p.kind==='refund'&&(p.refund_phone||p.refund_name)?`<span class="s num">to ${esc(p.refund_phone||'')}</span><span class="s ar">${esc(p.refund_name||'')}</span>`:''}</td><td class="ar" dir="auto">${p.refund_why?`<b>Why:</b> ${esc(p.refund_why)}`:''}${p.refund_why&&p.note?'<br>':''}${esc(p.note||'')}</td><td class="ar">${esc(pname(p.by))}</td></tr>`).join('')}</tbody></table></div>`:''}
    ${b.closed?'':`<div class="row"><button class="btn sm" data-act="pay-add" data-id="${r.id}" data-l="${leadId}">+ Add payment</button>${b.over?`<button class="btn sm pri" data-act="refund" data-id="${r.id}" data-l="${leadId}" data-k="overpaid">Refund overpayment ${egp(b.over)}</button>`:''}${b.paid>0?`<button class="btn sm bad" data-act="refund" data-id="${r.id}" data-l="${leadId}" data-k="refund">Refund</button>`:''}</div>`}</div>`}
 async function payModal(resId,leadId,kind){
   const r=(await Q(S.sb.from('reservations').select('*').eq('id',resId).single()));const b=resBalance(r);
@@ -508,25 +510,43 @@ async function payModal(resId,leadId,kind){
   if(kind==='refund')kind=b.over>0?'overpaid':'cancel';S.modal.kind=kind;
   const refund=kind!=='payment';
   const def=kind==='overpaid'?b.over:kind==='cancel'?b.paid:b.remain||'';
-  openModal(`${mhead(refund?'Refund · '+esc(r.code):'Add payment · '+esc(r.code))}<div class="mb">
+  if(!refund){openModal(`${mhead('Add payment · '+esc(r.code))}<div class="mb">
    <div class="hint">Course price ${b.price!=null?egp(b.price):'—'} · paid so far ${egp(b.paid)}${b.over?' · overpaid by '+egp(b.over):b.remain?' · remaining '+egp(b.remain):''}</div>
-   ${refund?`<div class="field"><label for="py-reason">Reason</label><select class="inp" id="py-reason" data-act-ch="py-reason"><option value="overpaid" ${kind==='overpaid'?'selected':''}>Paid more than the course price</option><option value="cancelled" ${kind==='cancel'?'selected':''}>Cancelled: refund what they paid</option><option value="other">Other</option></select></div>`:''}
    <div class="row"><div class="field"><label for="py-amt">Amount (EGP) <i>*</i></label><input type="number" min="1" class="inp num" id="py-amt" value="${esc(def)}"></div>
     <div class="field"><label for="py-meth">Method</label><select class="inp" id="py-meth">${METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div>
     <div class="field"><label for="py-date">Date</label><input type="date" class="inp" id="py-date" value="${today()}"></div></div>
    <div class="field"><label for="py-note">Note</label><input class="inp ar" dir="auto" id="py-note"></div>
-   ${refund?`<label class="row" style="gap:8px"><input type="checkbox" id="py-close" ${kind==='cancel'?'checked':''}> Mark the reservation as Refunded (the client is no longer booked)</label>`:''}
-  </div><div class="mf"><button class="btn pri" data-act="pay-save">${refund?'Save refund':'Save payment'}</button><button class="btn" data-act="close">Cancel</button></div>`);
+  </div><div class="mf"><button class="btn pri" data-act="pay-save">Save payment</button><button class="btn" data-act="close">Cancel</button></div>`);return}
+  openModal(`${mhead('Refund · '+esc(r.code)+' · <span class="ar">'+esc(r.client_name||'')+'</span>')}<div class="mb">
+   <div class="hint">Course price ${b.price!=null?egp(b.price):'—'} · paid so far ${egp(b.paid)}${b.over?' · overpaid by '+egp(b.over):b.remain?' · remaining '+egp(b.remain):''}</div>
+   <div class="row"><div class="field"><label for="py-reason">Refund type</label><select class="inp" id="py-reason" data-act-ch="py-reason">${Object.entries(REFUND_TYPES).map(([k,t])=>`<option value="${k}" ${(kind==='overpaid'&&k==='overpaid')||(kind==='cancel'&&k==='cancelled')?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="field" style="max-width:170px"><label for="py-amt">Amount to refund (EGP) <i>*</i></label><input type="number" min="1" class="inp num" id="py-amt" value="${esc(def)}"></div>
+    <div class="field" style="max-width:170px"><label for="py-date">Refund date</label><input type="date" class="inp" id="py-date" value="${today()}"></div></div>
+   <div class="field"><label for="py-why">Why does the client want a refund? <i>*</i></label><textarea class="inp ar" dir="auto" id="py-why" rows="2" placeholder="مثلاً: المواعيد مش مناسبة له / دفع مرتين بالغلط / سافر"></textarea></div>
+   <div class="card" style="background:var(--bg)"><h3 style="margin-bottom:10px">Where the money goes back</h3>
+    <div class="row"><div class="field"><label for="py-meth">Refund through</label><select class="inp" id="py-meth" data-act-ch="py-meth">${REFUND_METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+     <div class="field"><label for="py-phone" id="py-phone-l">Wallet / InstaPay number <i>*</i></label><input class="inp num" id="py-phone" value="${esc(r.phone||'')}" inputmode="tel"></div></div>
+    <div class="field" style="margin-top:8px"><label for="py-name">Name on that number / account <i>*</i></label><input class="inp ar" dir="auto" id="py-name" value="${esc(r.client_name&&!/^unknown$/i.test(r.client_name)?r.client_name:'')}" placeholder="The full name registered on the wallet or InstaPay"></div>
+    <div class="hint" style="margin-top:6px">The client's number is filled in. Change it if the money goes to a different number.</div></div>
+   <div class="field"><label for="py-note">Note (optional)</label><input class="inp ar" dir="auto" id="py-note" placeholder="e.g. transfer reference number"></div>
+   <label class="row" style="gap:8px"><input type="checkbox" id="py-close" ${kind==='cancel'?'checked':''}> Mark the reservation as Refunded (the client is no longer booked)</label>
+  </div><div class="mf"><button class="btn bad" data-act="pay-save">Save refund</button><button class="btn" data-act="close">Cancel</button></div>`);
 }
 async function savePay(){
   const m=S.modal;const amt=+$('#py-amt').value;if(!(amt>0)){toast('Enter an amount');return}
   const refund=m.kind!=='payment';const reason=refund?$('#py-reason').value:null;const b=resBalance(m.res);
   if(refund&&amt>b.paid){toast(`You can refund at most ${egp(b.paid)}, the amount they paid`);return}
   const close=refund&&$('#py-close').checked;
+  let rf={};
+  if(refund){const meth=$('#py-meth').value,why=$('#py-why').value.trim(),ph=$('#py-phone').value.trim(),nm=$('#py-name').value.trim();
+    if(!why){toast('Write why the client wants a refund');return}
+    if(meth!=='Cash'&&!ph){toast('Enter the number the money goes back to');return}
+    if(meth!=='Cash'&&!nm){toast('Enter the name on that number or account');return}
+    rf={refund_why:why,refund_phone:normPhone(ph)||ph||null,refund_name:nm||null};}
   const ok=await guard(async()=>{
-    await Q(S.sb.from('reservation_payments').insert({reservation_id:m.resId,kind:refund?'refund':'payment',amount:amt,method:$('#py-meth').value,refund_reason:reason,note:$('#py-note').value.trim()||null,pay_date:$('#py-date').value||today(),by:S.me.id}));
+    await Q(S.sb.from('reservation_payments').insert({reservation_id:m.resId,kind:refund?'refund':'payment',amount:amt,method:$('#py-meth').value,refund_reason:reason,...rf,note:$('#py-note').value.trim()||null,pay_date:$('#py-date').value||today(),by:S.me.id}));
     if(close)await Q(S.sb.from('reservations').update({status:'Refunded'}).eq('id',m.resId));
-    if(m.leadId)await addEvent(m.leadId,refund?'refund':'payment',{comment:$('#py-note').value.trim()||null,data:{code:m.res.code,amount:amt,method:$('#py-meth').value,reason,closed:close}});
+    if(m.leadId)await addEvent(m.leadId,refund?'refund':'payment',{comment:$('#py-note').value.trim()||null,data:{code:m.res.code,amount:amt,method:$('#py-meth').value,reason,closed:close,...rf}});
   },refund?'Refund saved ✓':'Payment saved ✓');
   if(ok){closeModal();loadView();if(m.leadId)clientModal(m.leadId)}
 }
@@ -538,7 +558,7 @@ function eventLine(e){
   else if(e.type==='call')body=`Call · ${pill(e.status)}${d.qualified===true?' <span class="pill green">Qualified</span>':d.qualified===false?' <span class="pill red">Not qualified</span>':''}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
   else if(e.type==='reserved')body=`<b>Reserved</b> ${esc(d.course||'')}${d.group_id?' · '+esc(groupName(d.group_id)):''} · ${egp(d.amount)} (${esc(d.payment||'')}, ${esc(d.method||'')}) · <span class="num">${esc(d.code||'')}</span>`;
   else if(e.type==='payment')body=`<b>Payment</b> ${egp(d.amount)} · ${esc(d.method||'')} · <span class="num">${esc(d.code||'')}</span>${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
-  else if(e.type==='refund')body=`<b style="color:var(--bad)">Refund</b> ${egp(d.amount)} · ${esc({overpaid:'paid more than the price',cancelled:'cancelled',other:'other'}[d.reason]||d.reason||'')} · ${esc(d.method||'')} · <span class="num">${esc(d.code||'')}</span>${d.closed?' · reservation closed':''}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
+  else if(e.type==='refund')body=`<b style="color:var(--bad)">Refund</b> ${egp(d.amount)} · ${esc({overpaid:'paid more than the price',cancelled:'cancelled',other:'other'}[d.reason]||d.reason||'')} · ${esc(d.method||'')}${d.refund_phone?` to <span class="num">${esc(d.refund_phone)}</span>`:''}${d.refund_name?` (<span class="ar">${esc(d.refund_name)}</span>)`:''} · <span class="num">${esc(d.code||'')}</span>${d.closed?' · reservation closed':''}${d.refund_why?`<div class="ar" dir="auto"><b>Why:</b> ${esc(d.refund_why)}</div>`:''}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
   else if(e.type==='group_joined')body=`<b>Joined group</b> ${esc(groupName(d.group_id))}`;
   else if(e.type==='edited')body=`Details updated${e.comment?': '+esc(e.comment):''}`;
   else body=`${esc(e.type)}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
@@ -579,7 +599,7 @@ async function callModal(id){
     <div class="field"><label for="c-fu">Next follow-up</label><input type="date" class="inp" id="c-fu" value="${esc(l.follow_up||'')}"></div></div>
    <div id="res-box" class="card" style="background:var(--bg);display:none"><h3 style="margin-bottom:10px">Reservation details</h3>
     <div class="row"><div class="field"><label for="r-course">Course</label><select class="inp" id="r-course" data-act-ch="r-course">${courseNames().map(c=>`<option ${c===l.course?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
-     <div class="field"><label for="r-group">Group / round</label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course)}</select>${isMgr()?'<a href="#groups" class="hint" data-act="close">+ Add a new group</a>':''}</div></div>
+     <div class="field"><label for="r-group">Group / round</label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course)}</select>${isAdmin()?'<a href="#config" class="hint" data-act="close">+ Add a new group in Settings</a>':''}</div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-att">Attendance</label><select class="inp" id="r-att"><option>Offline</option><option>Online</option></select></div>
      <div class="field"><label for="r-amt">Amount paid (EGP) <i>*</i></label><input class="inp num" type="number" min="0" id="r-amt" placeholder="${course&&course.price?course.price:''}"></div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-pay">Payment</label><select class="inp" id="r-pay"><option>Deposit</option><option>Full</option></select></div>
@@ -713,7 +733,7 @@ function groupsView(){
   const list=S.groups.filter(g=>(!f.course||g.course===f.course)&&(f.all||g.active)).sort((a,b)=>(a.course||'').localeCompare(b.course||'')||(b.start_date||'').localeCompare(a.start_date||''));
   const booked=id=>D?D.rs.filter(r=>r.group_id===id).length:0;
   const noGroup=D?D.rs.filter(r=>!r.group_id).length:0;
-  return `<div class="head"><div><h1>Groups</h1><div class="sub">The rounds and places clients book into. Add a group here and it shows up right away when an agent saves a reservation.</div></div><div class="sp"></div><button class="btn pri" data-act="grp-new">+ New group</button></div>
+  return `<div class="card" style="display:flex;flex-direction:column;gap:12px" id="groups"><div class="row"><div><h2>Groups / rounds</h2><div class="hint">The rounds and places clients book into. Add a group here and it shows up right away when an agent saves a reservation.</div></div><div class="sp"></div><button class="btn pri sm" data-act="grp-new">+ New group</button></div>
   ${noGroup?`<div class="note">${plural(noGroup,'active reservation')} not in a group yet. Open the client and click "Put in a group".</div>`:''}
   <div class="row"><select class="inp" id="gf-course" data-ch="gf.course"><option value="">All courses</option>${S.courses.map(c=>`<option ${f.course===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
    <label class="row" style="gap:6px"><input type="checkbox" data-act="gf-all" ${f.all?'checked':''}> Show closed groups too</label></div>
@@ -721,7 +741,7 @@ function groupsView(){
   ${list.map(g=>{const n=booked(g.id);const full=g.capacity&&n>=g.capacity;return `<tr><td data-l="Course">${esc(g.course)}</td><td data-l="Group"><b>${esc(g.name)}</b></td><td data-l="Location" class="ar" dir="auto">${esc(g.location||'—')}</td><td data-l="Days & time" class="ar" dir="auto">${esc(g.schedule||'—')}</td><td data-l="Attendance">${esc(g.mode||'—')}</td><td data-l="Starts" class="num">${g.start_date?fmtDay(g.start_date):'—'}</td>
    <td data-l="Booked" class="n">${D?`<span class="pill ${full?'red':n?'green':''}">${n}${g.capacity?' / '+g.capacity:''}</span>`:'<span class="spin"></span>'}</td><td data-l="Status">${g.active?'<span class="pill green">Open</span>':'<span class="pill">Closed</span>'}</td>
    <td><button class="btn sm" data-act="grp-clients" data-id="${g.id}">Clients</button> <button class="btn sm" data-act="grp-edit" data-id="${g.id}">Edit</button></td></tr>`}).join('')||`<tr><td colspan="9" class="empty">No groups yet. Click "+ New group".</td></tr>`}
-  </tbody></table></div>`;
+  </tbody></table></div></div>`;
 }
 function groupModal(id){
   const g=id?S.groups.find(x=>x.id===+id):{active:true,mode:'Offline',course:S.gf&&S.gf.course||''};S.modal={type:'grp',id:id?+id:null};
@@ -1054,7 +1074,7 @@ function settingsView(){
    <div style="overflow-x:auto"><table><thead><tr><th>Course</th><th>Price (EGP)</th><th>Active</th><th></th></tr></thead><tbody>
    ${S.courses.map(c=>`<tr><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.price??'')}" style="width:120px"></td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm" data-act="course-save" data-id="${c.id}">Save</button></td></tr>`).join('')}
    </tbody></table></div></div>
-  <div class="note info">Groups and rounds are managed on the <a href="#groups">Groups</a> page.</div>
+${groupsView()}
   <div class="grid2"><div class="card"><h2>Channels</h2><textarea class="inp" id="set-platforms" rows="7">${esc(platforms().join('\n'))}</textarea><div class="hint">One per line</div></div>
    <div class="card"><h2>Weekly day off</h2><div class="chips">${DOW.map((d,i)=>`<label class="chip ${wo.includes(i)?'on':''}"><input type="checkbox" class="wo" value="${i}" ${wo.includes(i)?'checked':''} data-act="chip">${d}</label>`).join('')}</div><div class="hint" style="margin-top:8px">Used by the attendance table.</div></div></div>
   <div class="card" style="padding:0"><div style="padding:16px 16px 8px" class="row"><h2>Leave & violation types</h2><div class="sp"></div><button class="btn sm" data-act="lt-new">+ Add type</button></div>
@@ -1088,6 +1108,7 @@ document.addEventListener('change',async e=>{
     if(['Reserved','Not Interested'].includes(v))fu.value='';if(v==='Reserved'&&!$('#c-gr').value)$('#c-gr').value='reserved';
     $('#res-box').style.display=v==='Reserved'?'block':'none';return}
   if(el.dataset.actCh==='lg-type'){$('#lg-ded').value=el.selectedOptions[0].dataset.ded||0;return}
+  if(el.dataset.actCh==='py-meth'){const l=$('#py-phone-l');if(l)l.innerHTML=el.value==='Bank transfer'?'Account / IBAN number <i>*</i>':el.value==='Cash'?'Phone number (optional)':el.value==='InstaPay'?'InstaPay number or address <i>*</i>':'Wallet number <i>*</i>';return}
   if(el.dataset.actCh==='r-group'){const m=el.selectedOptions[0]&&el.selectedOptions[0].dataset.mode;if(m)$('#r-att').value=m;return}
   if(el.dataset.actCh==='py-reason'){const b=resBalance(S.modal.res);if(el.value==='overpaid'){$('#py-amt').value=b.over||'';$('#py-close').checked=false}else if(el.value==='cancelled'){$('#py-amt').value=b.paid||'';$('#py-close').checked=true}return}
   if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value);return}
