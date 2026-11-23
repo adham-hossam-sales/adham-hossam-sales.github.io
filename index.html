@@ -330,11 +330,18 @@ function errMsg(e){const m=(e&&(e.message||e.error_description))||String(e);
   return m;}
 async function guard(fn,ok){try{const r=await fn();if(ok)toast(ok);return r==null?true:r}catch(e){console.error(e);toast(errMsg(e));return false}}
 async function addEvent(lead_id,type,o={}){return Q(S.sb.from('lead_events').insert({lead_id,type,by:S.me.id,status:o.status||null,comment:o.comment||null,data:o.data||null}))}
+/* seats taken per group = students in that group who are still in the round (from the round sheet) */
+async function loadSeats(){try{const {data,error}=await S.sb.rpc('group_seats');if(error)throw error;S.seats=Object.fromEntries((data||[]).map(r=>[r.group_id,r.taken]))}catch(e){console.warn('seats',e);S.seats=S.seats||{}}}
+const seatOf=g=>{const taken=(S.seats||{})[g.id]||0;return {taken,cap:g.capacity||null,full:!!g.capacity&&taken>=g.capacity,left:g.capacity?Math.max(0,g.capacity-taken):null}};
+/* the Settings group a round-sheet row belongs to: same round, same place (and the same time when the place has more than one) */
+function matchGroup(roundName,location){const {place,sched}=splitLoc(location);if(!place)return null;
+  const gs=(S.groups||[]).filter(g=>locKey(g.name)===locKey(roundName)&&splitLoc(g.location).place===place);
+  if(gs.length===1)return gs[0].id;const m=gs.filter(g=>AR(g.schedule)===sched);return m.length===1?m[0].id:null}
 async function loadRef(){
   const [profiles,settings,courses,groups]=await Promise.all([
     Q(S.sb.from('profiles').select('*').order('name')),Q(S.sb.from('settings').select('*')),
     Q(S.sb.from('courses').select('*').order('name')),Q(S.sb.from('groups').select('*').order('start_date',{ascending:false,nullsFirst:false}))]);
-  S.profiles=Object.fromEntries(profiles.map(p=>[p.id,p]));setTimeout(applyBrand);S.settings=Object.fromEntries(settings.map(s=>[s.key,s.value]));S.courses=courses;S.groups=groups;
+  S.profiles=Object.fromEntries(profiles.map(p=>[p.id,p]));setTimeout(applyBrand);S.settings=Object.fromEntries(settings.map(s=>[s.key,s.value]));S.courses=courses;S.groups=groups;await loadSeats();
 }
 const setting=(k,def)=>S.settings[k]!=null?S.settings[k]:def;
 const brand=()=>Object.assign({name:'Sales Department',sub:'Adham Hossam',logo:''},S.brandPub||{},S.settings.brand||{});
@@ -662,7 +669,7 @@ async function clientModal(id){
 }
 async function callModal(id){
   openModal(`${mhead('Call & update status')}<div class="mb"><div class="empty"><span class="spin"></span></div></div>`);
-  let F;try{F=await getLeadFull(id)}catch(e){toast(errMsg(e));closeModal();return}
+  let F;try{[F]=await Promise.all([getLeadFull(id),loadSeats()])}catch(e){toast(errMsg(e));closeModal();return}
   const l=F.lead;const t=today();const tc=F.events.filter(e=>e.type==='call'&&dayOf(e.at)===t).length;const mgr=isMgr();
   const course=S.courses.find(c=>c.name===l.course);
   S.modal={type:'call',id,lead:l};
@@ -697,7 +704,7 @@ async function callModal(id){
 function groupOptions(course,withRounds){const gs=S.groups.filter(g=>g.active&&(!course||!g.course||g.course===course));
   const byR={};gs.forEach(g=>{const k=locKey(g.name);(byR[k]=byR[k]||[]).push(g)});const names=Object.keys(byR).sort((a,b)=>rnum(b)-rnum(a)||a.localeCompare(b));
   const gl=g=>[g.location,g.schedule].filter(Boolean).join(' · ')||g.name;
-  return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${names.map(n=>`<optgroup label="${esc(n)}">${withRounds?`<option value="r:${esc(n)}">${esc(n)} · place not chosen yet</option>`:''}${byR[n].sort((a,b)=>gl(a).localeCompare(gl(b))).map(g=>`<option value="${g.id}" data-mode="${esc(g.mode||'')}">${esc(n)} · ${esc(gl(g))}${g.start_date?' · starts '+fmtDay(g.start_date):''}</option>`).join('')}</optgroup>`).join('')}`}
+  return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${names.map(n=>`<optgroup label="${esc(n)}">${withRounds?`<option value="r:${esc(n)}">${esc(n)} · place not chosen yet</option>`:''}${byR[n].sort((a,b)=>gl(a).localeCompare(gl(b))).map(g=>{const st=seatOf(g);return `<option value="${g.id}" data-mode="${esc(g.mode||'')}" ${st.full?'disabled':''}>${esc(n)} · ${esc(gl(g))}${g.start_date?' · starts '+fmtDay(g.start_date):''}${st.full?' · FULL':st.cap?` · ${st.left} seat${st.left===1?'':'s'} left`:''}</option>`}).join('')}</optgroup>`).join('')}`}
 async function saveCall(id){
   const l=S.modal?.lead;if(!l||l.id!==id)return;
   const st=$('#c-st').value,cm=$('#c-cm').value.trim(),mv=$('#c-mv')?.value;
@@ -826,18 +833,18 @@ async function loadGroups(){await loadRef();S.d.groups={rs:await all(()=>S.sb.fr
 function groupsView(){
   const D=S.d.groups;const f=S.gf||(S.gf={course:'',all:false});
   const list=S.groups.filter(g=>(!f.course||!g.course||g.course===f.course)&&(f.all||g.active));
-  const booked=id=>D?D.rs.filter(r=>r.group_id===id).length:0;
+  const booked=id=>(S.seats||{})[id]||0;
   const noGroup=D?D.rs.filter(r=>!r.group_id&&!r.round_name).length:0;
   const byR={};list.forEach(g=>{const k=locKey(g.name);(byR[k]=byR[k]||[]).push(g)});const names=Object.keys(byR).sort((a,b)=>rnum(b)-rnum(a)||a.localeCompare(b));
-  return `<div class="card" style="display:flex;flex-direction:column;gap:12px" id="groups"><div class="row"><div><h2>Rounds & groups</h2><div class="hint">Each round and the places / times inside it. These are exactly the choices sales sees when saving a reservation, and a booking lands in that round's sheet right away.</div></div><div class="sp"></div>${hasRounds()?'<button class="btn sm" data-act="grp-sync">Bring in groups from the Rounds sheets</button>':''}<button class="btn pri sm" data-act="grp-new">+ New round / group</button></div>
+  return `<div class="card" style="display:flex;flex-direction:column;gap:12px" id="groups"><div class="row"><div><h2>Rounds & groups</h2><div class="hint">Each round and the places / times inside it. These are exactly the choices sales sees when saving a reservation, and a booking lands in that round's sheet right away.</div></div><div class="sp"></div>${hasRounds()?'<button class="btn sm" data-act="grp-sync">Update from the Rounds sheets</button>':''}<button class="btn pri sm" data-act="grp-new">+ New round / group</button></div>
   ${noGroup?`<div class="note">${plural(noGroup,'active reservation')} not in a round yet. Open the client and click "Put in a group".</div>`:''}
   <div class="row"><select class="inp" id="gf-course" data-ch="gf.course"><option value="">All courses</option>${S.courses.map(c=>`<option ${f.course===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
    <label class="row" style="gap:6px"><input type="checkbox" data-act="gf-all" ${f.all?'checked':''}> Show closed groups too</label></div>
   ${names.map(n=>{const gs=byR[n].sort((a,b)=>(a.location||'').localeCompare(b.location||'')||(a.schedule||'').localeCompare(b.schedule||''));const tot=gs.reduce((x,g)=>x+booked(g.id),0);
-   return `<div class="rgroup"><div class="row"><h3>${esc(n)}</h3><span class="hint">${plural(gs.length,'group')}${D?' · '+plural(tot,'booking'):''}${gs[0].course?' · '+esc(gs[0].course):' · any course'}</span><div class="sp"></div><button class="btn sm" data-act="grp-new" data-k="${esc(n)}">+ Add group</button></div>
-   <div class="tbl-wrap"><table class="cards"><thead><tr><th>Place</th><th>Days & time</th><th>Attendance</th><th>Starts</th><th>Booked</th><th>Status</th><th></th></tr></thead><tbody>
+   return `<div class="rgroup"><div class="row"><h3>${esc(n)}</h3><span class="hint">${plural(gs.length,'group')}${' · '+plural(tot,'student')+' in the round'}${gs[0].course?' · '+esc(gs[0].course):' · any course'}</span><div class="sp"></div>${hasRounds()?`<button class="btn sm" data-act="grp-round" data-k="${esc(n)}">Open round sheet</button>`:''}<button class="btn sm" data-act="grp-new" data-k="${esc(n)}">+ Add group</button></div>
+   <div class="tbl-wrap"><table class="cards"><thead><tr><th>Place</th><th>Days & time</th><th>Attendance</th><th>Starts</th><th>Students / seats</th><th>Status</th><th></th></tr></thead><tbody>
    ${gs.map(g=>{const b=booked(g.id);const full=g.capacity&&b>=g.capacity;return `<tr><td data-l="Place" class="ar" dir="auto"><b>${esc(g.location||'—')}</b></td><td data-l="Days & time" class="ar" dir="auto">${esc(g.schedule||'—')}</td><td data-l="Attendance">${esc(g.mode||'—')}</td><td data-l="Starts" class="num">${g.start_date?fmtDay(g.start_date):'—'}</td>
-    <td data-l="Booked" class="n">${D?`<span class="pill ${full?'red':b?'green':''}">${b}${g.capacity?' / '+g.capacity:''}</span>`:'<span class="spin"></span>'}</td><td data-l="Status">${g.active?'<span class="pill green">Open</span>':'<span class="pill">Closed</span>'}</td>
+    <td data-l="Students / seats" class="n"><span class="pill ${full?'red':b?'green':''}">${b}${g.capacity?' / '+g.capacity:''}</span></td><td data-l="Status">${!g.active?'<span class="pill">Closed</span>':full?'<span class="pill red">Full</span>':'<span class="pill green">Open</span>'}</td>
     <td><button class="btn sm" data-act="grp-clients" data-id="${g.id}">Clients</button> <button class="btn sm" data-act="grp-edit" data-id="${g.id}">Edit</button></td></tr>`}).join('')}</tbody></table></div></div>`}).join('')||'<div class="empty">No rounds yet. Click "+ New round / group".</div>'}
   </div>`;
 }
@@ -848,7 +855,7 @@ async function syncGroupsFromRounds(){
     roundGroups(ents,r.name).tabs.filter(t=>!t.other).forEach(t=>{const w=locKey(t.label).split(' ');let i=w.findIndex(x=>DAYW.includes(AR(x).replace(/^و/,''))||/^[\d٠-٩]/.test(x));if(i<0)i=w.length;
       const loc=w.slice(0,i).join(' ')||t.place,sch=w.slice(i).join(' ')||null;const k=locKey(r.name)+'|'+AR(loc)+'|'+AR(sch);if(have.has(k))return;have.add(k);
       add.push({course:r.course||null,name:locKey(r.name),location:loc,schedule:sch,mode:/اونلاين|online/i.test(AR(loc))?'Online':'Offline',active:r.status!=='Closed'})})}
-  if(add.length)await Q(S.sb.from('groups').insert(add));return add.length}
+  if(add.length){await Q(S.sb.from('groups').insert(add));await loadRef()}await linkEntriesToGroups();return add.length}
 function groupModal(id,roundName){
   const g=id?S.groups.find(x=>x.id===+id):{active:true,mode:'Offline',course:S.gf&&S.gf.course||'',name:roundName||''};if(!id&&roundName){const o=S.groups.find(x=>locKey(x.name)===roundName);if(o)g.course=o.course}S.modal={type:'grp',id:id?+id:null};
   openModal(`${mhead(id?'Edit group':'New group')}<div class="mb">
@@ -858,7 +865,8 @@ function groupModal(id,roundName){
     <div class="field"><label for="g-sch">Days & time</label><input class="inp ar" dir="auto" id="g-sch" value="${esc(g.schedule||'')}" placeholder="الجمعة الساعة 5"></div></div>
    <div class="row"><div class="field"><label for="g-mode">Attendance</label><select class="inp" id="g-mode"><option ${g.mode==='Offline'?'selected':''}>Offline</option><option ${g.mode==='Online'?'selected':''}>Online</option></select></div>
     <div class="field"><label for="g-start">Start date</label><input type="date" class="inp" id="g-start" value="${esc(g.start_date||'')}"></div>
-    <div class="field"><label for="g-cap">Seats</label><input type="number" min="0" class="inp num" id="g-cap" value="${esc(g.capacity??'')}" placeholder="e.g. 25"></div></div>
+    <div class="field"><label for="g-cap">Max students</label><input type="number" min="0" class="inp num" id="g-cap" value="${esc(g.capacity??'')}" placeholder="e.g. 25"></div></div>
+   <div class="hint">When the group reaches its max it closes for new bookings by itself. It opens again when a student withdraws, gets a refund or is deferred out.</div>
    <label class="row" style="gap:8px"><input type="checkbox" id="g-active" ${g.active?'checked':''}> Open for new bookings</label>
   </div><div class="mf"><button class="btn pri" data-act="grp-save">${id?'Save':'Add group'}</button><button class="btn" data-act="close">Cancel</button></div>`);
 }
@@ -1092,7 +1100,7 @@ function roundGroups(ents,roundName){
 const NONE_LBL='Group not chosen';
 const inRound=e=>e.status!=='Withdrawn'&&e.status!=='Deferred out';
 async function loadRounds(){
-  if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};
+  if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};loadSeats();
   const [rounds,ents]=await Promise.all([Q(S.sb.from('rounds').select('*')),S.rd.round?all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id')):all(()=>S.sb.from('round_entries').select('round_id,status,location'))]);
   rounds.sort((a,b)=>(a.status==='Closed')-(b.status==='Closed')||rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));
   S.d.rounds={rounds,ents};
@@ -1124,11 +1132,11 @@ function roundSheetView(D){
   const G=D.G||(D.G=roundGroups(D.ents,r.name));const tabs=G.tabs,none=G.none.length;
   if(S.rd.tab!=='all'&&S.rd.tab!=='_none'&&!tabs.some(t=>t.key===S.rd.tab))S.rd.tab='all';
   const gsum=[...tabs,...(none?[{key:'_none',label:NONE_LBL,n:none,...G.none.reduce((a,e)=>(a[e.status]=(a[e.status]||0)+1,a),{})}]:[])];
-  const summary=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="gsum"><thead><tr><th>Group</th><th class="num">In the round</th><th class="num">Deferred in</th><th class="num">Later start</th><th class="num">Deferred out</th><th class="num">Withdrawn</th><th class="num">Total</th></tr></thead><tbody>
-   ${gsum.map(t=>`<tr class="click ${S.rd.tab===t.key?'on':''}" data-act="rd-tab" data-k="${esc(t.key)}"><td class="ar" dir="auto"><b>${esc(t.label)}</b></td><td class="num"><b>${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)}</b></td><td class="num">${t['Deferred in']||''}</td><td class="num">${t['Later start']||''}</td><td class="num">${t['Deferred out']||''}</td><td class="num">${t['Withdrawn']||''}</td><td class="num">${t.n}</td></tr>`).join('')}
-   <tr class="tot click" data-act="rd-tab" data-k="all"><td><b>All groups</b></td><td class="num"><b>${D.ents.filter(inRound).length}</b></td><td class="num">${sc['Deferred in']||''}</td><td class="num">${sc['Later start']||''}</td><td class="num">${sc['Deferred out']||''}</td><td class="num">${sc['Withdrawn']||''}</td><td class="num">${D.ents.length}</td></tr></tbody></table></div>`;
+  const summary=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="gsum"><thead><tr><th>Group</th><th class="num">In the round</th><th class="num">Deferred in</th><th class="num">Later start</th><th class="num">Deferred out</th><th class="num">Withdrawn</th><th class="num">Total</th><th class="num">Seats</th></tr></thead><tbody>
+   ${gsum.map(t=>`<tr class="click ${S.rd.tab===t.key?'on':''}" data-act="rd-tab" data-k="${esc(t.key)}"><td class="ar" dir="auto"><b>${esc(t.label)}</b></td><td class="num"><b>${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)}</b></td><td class="num">${t['Deferred in']||''}</td><td class="num">${t['Later start']||''}</td><td class="num">${t['Deferred out']||''}</td><td class="num">${t['Withdrawn']||''}</td><td class="num">${t.n}</td><td class="num">${(()=>{const g=t.key==='_none'?null:S.groups.find(x=>x.id===matchGroup(r.name,t.label));if(!g||!g.capacity)return '—';const st=seatOf(g);return `<span class="pill ${st.full?'red':'green'}">${st.full?'Full':st.left+' left'} · ${st.taken}/${st.cap}</span>`})()}</td></tr>`).join('')}
+   <tr class="tot click" data-act="rd-tab" data-k="all"><td><b>All groups</b></td><td class="num"><b>${D.ents.filter(inRound).length}</b></td><td class="num">${sc['Deferred in']||''}</td><td class="num">${sc['Later start']||''}</td><td class="num">${sc['Deferred out']||''}</td><td class="num">${sc['Withdrawn']||''}</td><td class="num">${D.ents.length}</td><td></td></tr></tbody></table></div>`;
   
-  const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>`<option>${esc(l)}</option>`).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
+  const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>{const g=S.groups.find(x=>x.id===matchGroup(r.name,l));const st=g?seatOf(g):{};return `<option value="${esc(l)}" ${st.full?'disabled':''}>${esc(l)}${st.full?' · FULL':st.cap?` · ${st.left} left`:''}</option>`}).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
   return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${plural(D.ents.length,'student')} · ${esc(r.status)}</div></div><div class="sp"></div>
    <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
   <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${none?`<button data-act="rd-tab" data-k="_none" class="tab-warn ${S.rd.tab==='_none'?'on':''}">⚠ ${NONE_LBL} · ${none}</button>`:''}${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto">${esc(t.label)} · ${t.n}</button>`).join('')}</div>
@@ -1153,7 +1161,15 @@ function roundModal(id){
 }
 function locPickOptions(D,r){const G=D.G||(D.G=roundGroups(D.ents,r.name));
   return [...new Set(G.tabs.filter(t=>!t.other).map(t=>t.label).concat(S.groups.filter(g=>locKey(g.name)===locKey(r.name)).map(g=>locKey((g.location||'')+' '+(g.schedule||'')))).filter(Boolean))]}
-async function setEntryLoc(id,loc){await Q(S.sb.from('round_entries').update({location:locKey(loc)||null,updated_at:nowISO(),updated_by:S.me.id}).eq('id',id));toast('Group saved ✓');await refreshRoundEnts(true)}
+async function setEntryLoc(id,loc){const r=S.d.rounds.rounds.find(x=>x.id===S.rd.round);const gid=matchGroup(r.name,loc);
+  if(gid){await loadSeats();const g=S.groups.find(x=>x.id===gid);const st=seatOf(g);if(st.full){toast(`That group is full (${st.taken} of ${st.cap}). Pick another one.`);render();return}}
+  await Q(S.sb.from('round_entries').update({location:locKey(loc)||null,group_id:gid,updated_at:nowISO(),updated_by:S.me.id}).eq('id',id));toast('Group saved ✓');await loadSeats();await refreshRoundEnts(true)}
+/* put every round-sheet row under its Settings group, so seats are counted right */
+async function linkEntriesToGroups(){let n=0;const rounds=await Q(S.sb.from('rounds').select('id,name'));
+  for(const r of rounds){const ents=await all(()=>S.sb.from('round_entries').select('id,location,group_id').eq('round_id',r.id));const by={};
+    ents.forEach(e=>{const gid=matchGroup(r.name,e.location);if(gid!==e.group_id)(by[gid??'null']=by[gid??'null']||[]).push(e.id)});
+    for(const [k,ids] of Object.entries(by))for(let i=0;i<ids.length;i+=150){await Q(S.sb.from('round_entries').update({group_id:k==='null'?null:+k}).in('id',ids.slice(i,i+150)));n+=Math.min(150,ids.length-i)}}
+  await loadSeats();return n}
 async function refreshRoundEnts(force){if(!S.rd||!S.rd.round||!S.d.rounds)return;
   const ents=await all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id'));
   const sig=x=>x.length+'|'+x.map(e=>e.id+':'+(e.updated_at||'')).join(',');if(!force&&sig(ents)===sig(S.d.rounds.ents))return;
@@ -1180,7 +1196,8 @@ function entryModal(id){
   </div><div class="mf"><button class="btn pri" data-act="rd-save-entry">Save</button>${id?`<button class="btn bad" data-act="rd-del-entry" data-id="${id}">Delete row</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`,true);
 }
 function readEntry(){const g=k=>{const el=$('#re-'+k);return el?el.value.trim():''};
-  const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,location:locKey(g('location'))||null,status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
+  const rn=(S.d.rounds.rounds.find(x=>x.id===S.rd.round)||{}).name;
+  const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,location:locKey(g('location'))||null,group_id:matchGroup(rn,g('location')),status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
   if(!$('#re-name').disabled)Object.assign(v,{name:g('name')||null,phone:g('phone')||null,booked_on:g('booked_on')||null,deposit:g('deposit')===''?null:+g('deposit').replace(/[^\d.]/g,'')||null,received_on:g('received_on')||null,agent:g('agent')||null,location:locKey(g('location'))||null,plan:g('plan')||null});
   return v}
 function exportRoundXlsx(){
@@ -1228,7 +1245,7 @@ async function importRows(roundName,region,rows,opts={}){
   rows.forEach(raw=>{const e=rowToEntry(raw,layout);if(!e)return;const k=digits(e.phone)||('n:'+e.name);const h=byKey.get(k);
     if(h){skip++;const loc=locKey(e.location)||opts.fillLocation;if(!h.location&&loc&&h.id){h.location=loc;fill.push(h)}return}
     if(!e.location&&opts.fillLocation)e.location=opts.fillLocation;e.location=e.location?locKey(e.location):null;
-    e.status=(opts.statusMap&&opts.statusMap[digits(e.phone)])||guessStatus(e.notes);const row={...e,round_id:r.id,source:'sheet',sort:have.length+out.length+1,updated_by:S.me.id};out.push(row);byKey.set(k,row)});
+    e.status=(opts.statusMap&&opts.statusMap[digits(e.phone)])||guessStatus(e.notes);const row={...e,group_id:matchGroup(r.name,e.location),round_id:r.id,source:'sheet',sort:have.length+out.length+1,updated_by:S.me.id};out.push(row);byKey.set(k,row)});
   for(let i=0;i<out.length;i+=200)await Q(S.sb.from('round_entries').insert(out.slice(i,i+200)));
   for(const h of fill)await Q(S.sb.from('round_entries').update({location:h.location}).eq('id',h.id));
   return {round:r,added:out.length,skipped:skip,layout}}
@@ -1317,7 +1334,7 @@ async function roundsClick(act,a,id){
     if(await guard(()=>Q(S.sb.from('round_entries').delete().eq('id',+id)),'Row deleted')){closeModal();loadView()}}
   else if(act==='rd-defer'){const to=+$('#re-to').value;if(!to){toast('Pick the round to defer to');return}const e=D.ents.find(x=>x.id===+id);const from=D.rounds.find(r=>r.id===S.rd.round),tgt=D.rounds.find(r=>r.id===to);
     const {id:_i,reservation_id,created_at,updated_at,round_id,sort,...copy}=e;
-    if(await guard(async()=>{await Q(S.sb.from('round_entries').insert({...copy,round_id:to,status:'Deferred in',source:'manual',notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_by:S.me.id}));
+    if(await guard(async()=>{await Q(S.sb.from('round_entries').insert({...copy,round_id:to,group_id:matchGroup(tgt.name,copy.location),status:'Deferred in',source:'manual',notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_by:S.me.id}));
       await Q(S.sb.from('round_entries').update({status:'Deferred out',notes:[e.notes,'تأجيل ل'+tgt.name].filter(Boolean).join(' / '),updated_at:nowISO(),updated_by:S.me.id}).eq('id',e.id))},'Deferred to '+tgt.name+' ✓')){closeModal();loadView()}}
   else if(act==='rd-xlsx')exportRoundXlsx();
   else if(act==='rd-import')importModal();
@@ -1620,6 +1637,7 @@ document.addEventListener('click',async e=>{
   else if(act==='imp-skip'){impState().skipDup=a.checked;render()}
   else if(act==='do-import')doImport();
   // reservations
+  else if(act==='grp-round'){const r=(await Q(S.sb.from('rounds').select('id,name'))).find(x=>locKey(x.name)===a.dataset.k);if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};if(r){S.rd.round=r.id;S.rd.tab='all'}location.hash='rounds';return}
   else if(act==='grp-new')groupModal(null,a.dataset.k||'');
   else if(act==='grp-sync'){a.disabled=true;const n=await guard(()=>syncGroupsFromRounds());a.disabled=false;if(n!==false){toast(n===true||!n?'Everything is already here ✓':plural(n,'group')+' added ✓');loadView()}}
   else if(act==='grp-edit')groupModal(id);
