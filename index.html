@@ -184,6 +184,10 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .sheet td{padding:6px 8px;vertical-align:top}.sheet td.c-notes{min-width:260px;max-width:380px}.sheet td.c-email{font-size:11.5px}.sheet td.c-name{font-weight:600;min-width:150px}
 .sheet td.c-location{min-width:170px}.rst{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .tabs button.tab-warn{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}.tabs button.tab-warn.on{background:var(--warn);color:#fff}.locpick{min-width:170px;padding:4px 8px;font-size:13px;border-color:var(--warn);background:var(--warn-soft)}
+.rembar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 4px;padding:10px 14px;border-radius:10px;background:var(--bad-soft);border:1px solid var(--bad);color:var(--bad)}.rembar b{white-space:nowrap}.rembar .ar{color:var(--ink)}
+.nbadge{display:inline-block;min-width:20px;padding:1px 6px;border-radius:10px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;text-align:center;margin-inline-start:6px}
+tr.due-row td:first-child{box-shadow:inset 4px 0 0 var(--bad)}tr.due-row{background:var(--bad-soft)}tr.due-head td{background:var(--bad);color:#fff;font-weight:600;padding:6px 12px}
+.due-pill{background:var(--bad)!important;color:#fff!important;display:table;margin-bottom:4px;white-space:normal}.fuq{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .gsum{width:100%;border-collapse:collapse}.gsum th,.gsum td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:start}.gsum td.num,.gsum th.num{text-align:center}.gsum tr.on td{background:var(--accent-soft,#eef2ff)}.gsum tr.tot td{border-top:2px solid var(--line);background:var(--bg)}
 .rlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}.rlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
 .pstats{display:flex;flex-wrap:wrap;gap:8px}.pstats div{background:var(--bg);border-radius:10px;padding:8px 12px;min-width:92px}.pstats b{display:block;font-size:18px}.pstats span{font-size:12px;color:var(--muted)}
@@ -263,6 +267,13 @@ const dayOf=iso=>dstr(new Date(iso));
 const dm=s=>{if(!s)return '';const [y,m,d]=s.split('-');return (+d)+'/'+(+m)};
 const fmtDay=s=>s?parseD(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:parseD(s).getFullYear()===new Date().getFullYear()?undefined:'numeric'}):'—';
 const fmtTime=iso=>iso?new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+const hhmm=iso=>{const d=new Date(iso);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const CLOSED_ST=['Reserved','Not Interested'];
+/* a follow-up is due when its time has come (or, with no time, its day has come) and nobody has logged a call since it was set */
+const fuDue=l=>!!l&&!CLOSED_ST.includes(l.status)&&(l.follow_up_at?new Date(l.follow_up_at)<=new Date():!!l.follow_up&&l.follow_up<=today());
+const fuLabel=l=>l.follow_up_at?(dayOf(l.follow_up_at)===today()?'Today ':fmtDay(dayOf(l.follow_up_at))+' ')+fmtTime(l.follow_up_at):l.follow_up?fmtDay(l.follow_up):'';
+const dueOr=()=>`follow_up_at.lte.${new Date().toISOString()},and(follow_up_at.is.null,follow_up.lte.${today()})`;
+const fuBadge=l=>`<span class="pill red due-pill">⏰ ${l.status==='Call Later'?'Call later':'Follow-up'} · ${esc(fuLabel(l))} · not called yet</span>`;
 const fmtWhen=iso=>{if(!iso)return '—';const d=dayOf(iso),t=today();if(d===t)return 'Today '+fmtTime(iso);if(d===addDays(t,-1))return 'Yesterday '+fmtTime(iso);return fmtDay(d)+' '+fmtTime(iso)};
 const nf=n=>(+n||0).toLocaleString('en-US');
 const egp=n=>'EGP '+nf(Math.round(+n||0));
@@ -357,7 +368,7 @@ async function enter(){
     S.me=me;await loadRef();S.me=S.profiles[uid]||me;
     const h=location.hash.slice(1);S.view=h||(me.role==='agent'?'leads':me.role==='ops'?'rounds':'dashboard');
   }catch(e){console.error(e);S.authMsg=errMsg(e)}
-  S.booting=false;render();loadView();
+  S.booting=false;render();loadView();checkReminders(true);
 }
 async function doLogin(){
   const email=$('#lg-email').value.trim(),pw=$('#lg-pw').value;if(!email||!pw){toast('Enter your email and password');return}
@@ -378,7 +389,7 @@ async function doSetup(){
     S.authBusy=false;await enter();
   }catch(e){S.authBusy=false;S.authMsg=errMsg(e);render()}
 }
-async function logout(){await S.sb.auth.signOut();S.me=null;S.session=null;S.d={};location.hash='';await checkAdmin();render()}
+async function logout(){await S.sb.auth.signOut();S.me=null;S.rem=null;S.session=null;S.d={};location.hash='';await checkAdmin();render()}
 
 /* ================= render ================= */
 function render(){
@@ -399,15 +410,31 @@ function view(){
   const showPeriod=['dashboard','leads','reservations'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
   <aside class="rail" id="rail"><div class="brand"><img src="${esc(logoSrc())}" alt=""><div><b>${esc(brand().name)}</b><span>${esc(brand().sub)}</span></div></div>
-   <nav class="nav">${navs.map(([k,t])=>`<a href="#${k}" class="${S.view===k?'on':''}">${t}</a>`).join('')}</nav>
+   <nav class="nav">${navs.map(([k,t])=>`<a href="#${k}" class="${S.view===k?'on':''}">${t}${k==='leads'&&S.rem&&S.rem.n?` <span class="nbadge" title="Call-backs due">${S.rem.n}</span>`:''}</a>`).join('')}</nav>
    <div class="me"><div><b class="ar">${esc(me.name)}</b>${ROLES[me.role]}</div><button data-act="pw-mine">Change my password</button><button data-act="logout">Sign out</button></div></aside>
   <div class="main">
    <div class="top"><button class="btn sm menu-btn" data-act="menu" aria-label="Menu">☰</button>
     ${showPeriod?`<select class="inp" id="period" data-ch="period" aria-label="Period">${PERIODS.map(([k,t])=>`<option value="${k}" ${S.period===k?'selected':''}>${t}</option>`).join('')}</select>`:''}
     <div class="sp"></div>${S.loading?'<span class="spin" aria-label="Loading"></span>':''}<button class="btn sm" data-act="refresh">Refresh</button></div>
-   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView}[S.view]||dashView)()}</div>
+   ${remBar()}<div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView}[S.view]||dashView)()}</div>
   </div></div>`;
 }
+/* ===== reminders: the agent's own follow-ups / call-backs whose time has come ===== */
+function remBar(){const R=S.rem;if(!R||!R.n||R.hidden===R.sig)return '';
+  const canAsk=typeof Notification!=='undefined'&&Notification.permission==='default';
+  return `<div class="rembar" role="alert"><b>⏰ ${plural(R.n,'call-back')} due now</b><span class="ar">${R.list.slice(0,3).map(l=>`${esc(l.name||l.phone)} (${l.status==='Call Later'?'call later':'follow-up'} ${esc(fuLabel(l))})`).join(' · ')}${R.n>3?' …':''}</span><div class="sp"></div>
+   ${canAsk?'<button class="btn sm" data-act="rem-alerts">Turn on pop-up alerts</button>':''}<button class="btn sm pri" data-act="rem-open">Show them</button><button class="btn sm" data-act="rem-hide" aria-label="Hide until a new one is due">Hide</button></div>`}
+async function checkReminders(force){
+  if(!S.me||!S.sb||S.me.role==='ops'||S.me.active===false)return;
+  let list;try{list=await Q(S.sb.from('leads').select('id,name,phone,status,follow_up,follow_up_at').eq('agent_id',S.me.id).or(dueOr()).not('status','in','("Reserved","Not Interested")').order('follow_up_at',{ascending:true,nullsFirst:false}).limit(50))}catch(e){console.warn(e);return}
+  const old=S.rem||{seen:new Set()};const seen=old.seen||new Set();const fresh=list.filter(l=>!seen.has(l.id+'|'+(l.follow_up_at||l.follow_up)));
+  fresh.forEach(l=>seen.add(l.id+'|'+(l.follow_up_at||l.follow_up)));
+  const sig=list.map(l=>l.id).join(',');S.rem={n:list.length,list,seen,sig,hidden:old.hidden};
+  if(fresh.length&&old.sig!==undefined){const l=fresh[0];const msg=`⏰ Call back ${l.name||l.phone}${fresh.length>1?' and '+(fresh.length-1)+' more':''}`;toast(msg);
+    try{if(typeof Notification!=='undefined'&&Notification.permission==='granted'){const n=new Notification('Call-back due',{body:`${l.name||l.phone} · ${l.status==='Call Later'?'call later':'follow-up'} ${fuLabel(l)}`,tag:'fu-'+l.id});n.onclick=()=>{window.focus();S.f.tab='due';location.hash='leads';loadView()}}}catch(_){}}
+  if(force||old.n!==S.rem.n||old.sig!==sig){const ae=document.activeElement;if(!(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)&&!S.modal))render()}}
+setInterval(()=>{if(!document.hidden)checkReminders(false)},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkReminders(false)});
 function authView(){
   const setup=S.hasAdmin===false;
   return `<div class="center"><div class="card">${brandHead()}
@@ -486,6 +513,7 @@ function leadsQuery(sel,opts){
   let qb=S.sb.from('leads').select(sel,opts);const f=S.f;const [from,to]=periodRange();
   if(f.tab==='new')qb=qb.eq('status','New');
   else if(f.tab==='fu')qb=qb.lte('follow_up',today()).not('status','in','("Reserved","Not Interested")');
+  else if(f.tab==='due')qb=qb.or(dueOr()).not('status','in','("Reserved","Not Interested")');
   else if(f.tab==='res')qb=qb.eq('status','Reserved');
   if(f.tab==='all'&&!f.q.trim())qb=qb.gte('created_at',startISO(from)).lt('created_at',endISO(to));
   if(f.status)qb=qb.eq('status',f.status);
@@ -496,13 +524,20 @@ function leadsQuery(sel,opts){
   if(q){const d=q.replace(/\D/g,'').replace(/^0/,'');qb=qb.or(`name.ilike.*${q}*`+(d.length>=4?`,phone.ilike.*${d}*`:''))}
   return qb;
 }
+async function loadDue(agent){let q=S.sb.from('leads').select('*').or(dueOr()).not('status','in','("Reserved","Not Interested")').order('follow_up_at',{ascending:true,nullsFirst:false}).order('follow_up').limit(100);
+  if(S.me.role==='agent')q=q.eq('agent_id',S.me.id);else if(agent)q=agent==='none'?q.is('agent_id',null):q.eq('agent_id',agent);
+  const f=S.f;if(f.course)q=q.eq('course',f.course);if(f.platform)q=q.eq('platform',f.platform);return await Q(q)}
 async function loadLeads(){
-  const f=S.f;const r=await Q(leadsQuery('*',{count:'exact'}).order(f.tab==='fu'?'follow_up':'created_at',{ascending:f.tab==='fu'}).range(f.page*PAGE,f.page*PAGE+PAGE-1));
-  S.d.leads={rows:r.data,count:r.count};
+  const f=S.f;const fu=f.tab==='fu'||f.tab==='due';let qb=leadsQuery('*',{count:'exact'});
+  qb=fu?qb.order('follow_up',{ascending:true}).order('follow_up_at',{ascending:true,nullsFirst:true}):qb.order('created_at',{ascending:false});
+  const [r,due]=await Promise.all([Q(qb.range(f.page*PAGE,f.page*PAGE+PAGE-1)),
+    /* call-backs whose time has come show on top of the new calls, flagged, until someone calls them */
+    f.tab==='new'&&!f.page?loadDue(S.me.role==='agent'?null:f.agent):Promise.resolve([])]);
+  S.d.leads={rows:r.data,count:r.count,due};
 }
 function leadsView(){
   const D=S.d.leads;const f=S.f;const mgr=isMgr();const t=today();
-  const tabs=[['all','All (by period)'],['new','New, not called'],['fu','Follow-ups due'],['res','Reserved']];
+  const tabs=[['all','All (by period)'],['new','New calls'],['due',`⏰ Call-backs due${S.rem&&S.rem.n?' · '+S.rem.n:''}`],['fu','Follow-ups (today & late)'],['res','Reserved']];
   const count=D?D.count:0;const pages=Math.max(1,Math.ceil(count/PAGE));
   return `<div class="head"><div><h1>${S.me.role==='agent'?'My Leads':S.me.role==='tl'?'Team Leads':'All Leads'}</h1><div class="sub">${D?plural(count,'lead'):'Loading…'}</div></div><div class="sp"></div>
    ${mgr?`<button class="btn" data-act="leads-csv">Export CSV</button><a class="btn pri" href="#import">+ Import leads</a>`:''}</div>
@@ -514,15 +549,16 @@ function leadsView(){
    ${mgr?`<select class="inp ar" data-ch="f.agent" id="f-ag"><option value="">All agents</option>${isAdmin()?`<option value="none" ${f.agent==='none'?'selected':''}>Unassigned</option>`:''}${myAgents().map(a=>`<option value="${a.id}" ${f.agent===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>`:''}</div>
   ${mgr&&S.sel.size?`<div class="note info row">${plural(S.sel.size,'lead')} selected · Move to <select class="inp ar" id="bulk-to"><option value="">— Pick an agent —</option>${myAgents().map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select><button class="btn sm pri" data-act="bulk-move">Move</button><button class="btn sm" data-act="sel-clear">Clear</button></div>`:''}
   <div class="tbl-wrap"><table class="cards"><thead><tr>${mgr?'<th><input type="checkbox" data-act="sel-all" aria-label="Select all on this page"></th>':''}<th>Client</th><th>Course · Channel</th>${mgr?'<th>Agent</th>':''}<th>Status</th><th>Last call</th><th>Calls</th><th>Follow-up</th><th>Came in</th><th></th></tr></thead><tbody>
-  ${D?D.rows.map(l=>`<tr class="click" data-act="client" data-id="${l.id}">
+  ${D&&D.due&&D.due.length?`<tr class="due-head"><td colspan="10">⏰ ${plural(D.due.length,'call-back')} due now, not called yet</td></tr>`:''}
+  ${D?(D.due||[]).concat(D.rows).map(l=>`<tr class="click ${fuDue(l)?'due-row':''}" data-act="client" data-id="${l.id}">
    ${mgr?`<td data-act="noop"><input type="checkbox" data-act="sel" data-id="${l.id}" ${S.sel.has(l.id)?'checked':''} aria-label="Select"></td>`:''}
-   <td data-l="Client"><div><b class="ar">${esc(l.name||'Unknown')}</b><span class="s num">${esc(l.phone)}</span>${l.city?`<span class="s">${esc(l.city)}</span>`:''}</div></td>
+   <td data-l="Client"><div>${fuDue(l)?fuBadge(l):''}<b class="ar">${esc(l.name||'Unknown')}</b><span class="s num">${esc(l.phone)}</span>${l.city?`<span class="s">${esc(l.city)}</span>`:''}</div></td>
    <td data-l="Course"><div>${esc(l.course||'—')}<span class="s">${esc(l.platform||'')}</span></div></td>
    ${mgr?`<td data-l="Agent" class="ar">${esc(pname(l.agent_id))}</td>`:''}
    <td data-l="Status"><div>${pill(l.status)}${l.interest_group?`<span class="s">${GR[l.interest_group]||''}</span>`:''}${l.group_id?`<span class="s">In group: ${esc(groupName(l.group_id))}</span>`:''}</div></td>
    <td data-l="Last call">${l.last_call_at?fmtWhen(l.last_call_at):'<span class="s">Not called yet</span>'}</td>
    <td data-l="Calls" class="n">${l.calls_count||0}</td>
-   <td data-l="Follow-up">${l.follow_up?`<span class="pill ${l.follow_up<=t?'amber':''}">${fmtDay(l.follow_up)}</span>`:'—'}</td>
+   <td data-l="Follow-up">${l.follow_up?`<span class="pill ${fuDue(l)?'red':l.follow_up<=t?'amber':''}">${esc(fuLabel(l))}</span>`:'—'}</td>
    <td data-l="Came in" class="num">${fmtDay(dayOf(l.created_at))}</td>
    <td><button class="btn sm pri" data-act="call" data-id="${l.id}">Call</button></td></tr>`).join('')||`<tr><td colspan="10" class="empty">No leads here</td></tr>`:`<tr><td colspan="10" class="empty"><span class="spin"></span></td></tr>`}
   </tbody></table></div>
@@ -634,7 +670,9 @@ async function callModal(id){
     <div class="field"><label for="c-q">Qualified?</label><select class="inp" id="c-q"><option value="">Not set</option><option value="1">Qualified</option><option value="0">Not qualified</option></select></div></div>
    <div class="field"><label for="c-cm">Comment <i>*</i></label><textarea class="inp ar" dir="auto" id="c-cm" rows="3" placeholder="What did the client say?"></textarea></div>
    <div class="row"><div class="field"><label for="c-gr">Interest group</label><select class="inp" id="c-gr"><option value="">—</option>${GROUPS.map(([k,v])=>`<option value="${k}" ${l.interest_group===k?'selected':''}>${v}</option>`).join('')}</select></div>
-    <div class="field"><label for="c-fu">Next follow-up</label><input type="date" class="inp" id="c-fu" value="${esc(l.follow_up||'')}"></div></div>
+    <div class="field"><label for="c-fu">Next follow-up / call back</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input type="date" class="inp" id="c-fu" min="${t}" value="${esc(l.follow_up||'')}"><input type="time" class="inp" id="c-fut" aria-label="Time" value="${l.follow_up_at?hhmm(l.follow_up_at):''}" style="max-width:130px"></div>
+     <div class="fuq">${[['h1','In 1 hour'],['h2','In 2 hours'],['ev','Today 7 PM'],['tm','Tomorrow 12 PM'],['x','Clear']].map(([k,v])=>`<button type="button" class="btn sm" data-act="fu-quick" data-k="${k}">${v}</button>`).join('')}</div>
+     <div class="hint" id="c-fu-h">Pick a time and it pops up as a reminder when it comes. Same day is fine.</div></div></div>
    <div id="res-box" class="card" style="background:var(--bg);display:none"><h3 style="margin-bottom:10px">Reservation details</h3>
     <div class="row"><div class="field"><label for="r-course">Course</label><select class="inp" id="r-course" data-act-ch="r-course">${courseNames().map(c=>`<option ${c===l.course?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
      <div class="field"><label for="r-group">Group / round</label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course,true)}</select>${isAdmin()?'<a href="#config" class="hint" data-act="close">+ Add a new group in Settings</a>':''}</div></div>
@@ -660,13 +698,18 @@ async function saveCall(id){
   if(st==='Reserved'){const amt=$('#r-amt').value;if(amt===''){toast('Enter the amount paid');return}
     resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,round_name:$('#r-group').value.startsWith('r:')?$('#r-group').value.slice(2):null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value,plan:$('#r-plan').value||null,paid_to:$('#r-to').value.trim()||null,email:$('#r-email').value.trim()||null};}
   const name=$('#c-name').value.trim()||l.name||'Unknown',city=$('#c-city').value||l.city||null;
-  const patch={name,city,interest_group:$('#c-gr').value||null,follow_up:$('#c-fu').value||null};
+  const fd=$('#c-fu').value,ft=$('#c-fut').value;
+  if(st==='Call Later'&&(!fd||!ft)){toast('Set the day and time to call back');$('#c-fut').focus();return}
+  if(ft&&!fd){toast('Pick the day for the follow-up');return}
+  const fat=fd&&ft?new Date(fd+'T'+ft):null;
+  if(fat&&fat<new Date(Date.now()-5*60000)&&(fat.toISOString()!==l.follow_up_at)){toast('That follow-up time has already passed');return}
+  const patch={name,city,interest_group:$('#c-gr').value||null,follow_up:fd||null,follow_up_at:fat?fat.toISOString():null};
   if(st){const qv=$('#c-q').value;patch.status=st;patch.qualified=qv===''?l.qualified:qv==='1';patch.last_call_at=nowISO();patch.calls_count=(l.calls_count||0)+1;
-    if(['Reserved','Not Interested'].includes(st))patch.follow_up=null;if(st==='Reserved'&&!patch.interest_group)patch.interest_group='reserved';
+    if(['Reserved','Not Interested'].includes(st)){patch.follow_up=null;patch.follow_up_at=null}if(st==='Reserved'&&!patch.interest_group)patch.interest_group='reserved';
     if(resv){patch.course=resv.course;if(resv.group_id)patch.group_id=resv.group_id}}
   const ok=await guard(async()=>{
     await Q(S.sb.from('leads').update(patch).eq('id',id));
-    if(st)await addEvent(id,'call',{status:st,comment:cm,data:{qualified:patch.qualified??null}});
+    if(st)await addEvent(id,'call',{status:st,comment:cm,data:{qualified:patch.qualified??null,follow_up:patch.follow_up,follow_up_at:patch.follow_up_at}});
     if(resv){const code='RES-'+today().replace(/-/g,'')+'-'+String(Math.floor(Math.random()*90000)+10000);
       const price=(S.courses.find(c=>c.name===resv.course)||{}).price??null;const {amount:paid,...rest}=resv;
       const rr=await Q(S.sb.from('reservations').insert({...rest,price,code,lead_id:id,client_name:name,phone:l.phone,agent_id:l.agent_id||S.me.id,created_by:S.me.id}).select('id').single());
@@ -674,6 +717,7 @@ async function saveCall(id){
       await addEvent(id,'reserved',{data:{...resv,code}});if(resv.group_id)await addEvent(id,'group_joined',{data:{group_id:resv.group_id}});}
     if(mv){await addEvent(id,'reassigned',{data:{from:l.agent_id,to:mv}});await Q(S.sb.from('leads').update({agent_id:mv,assigned_at:nowISO()}).eq('id',id))}
   },resv?'Reservation saved ✓':mv?'Saved and reassigned ✓':'Saved ✓');
+  if(ok)checkReminders(true);
   if(ok){closeModal();loadView()}
 }
 function joinGroupModal(id,course){
@@ -1483,7 +1527,8 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',async e=>{
   const el=e.target;const k=el.dataset.ch;markDirty(el);
   if(el.dataset.actCh==='c-st'){const v=el.value;const q=QUAL_DEFAULT[v];$('#c-q').value=q===true?'1':q===false?'0':'';
-    const fu=$('#c-fu');if(['Call Later','No Answer','Not Available','Send Details WP','Possible Lead'].includes(v)&&!fu.value)fu.value=addDays(today(),1);
+    const fu=$('#c-fu');if(v==='Call Later'){if(!fu.value)fu.value=today();$('#c-fu-h').innerHTML='<b>When did the client ask you to call back?</b> Set the time, and the system reminds you then.';$('#c-fut').focus()}
+    else if(['No Answer','Not Available','Send Details WP','Possible Lead'].includes(v)&&!fu.value)fu.value=addDays(today(),1);
     if(['Reserved','Not Interested'].includes(v))fu.value='';if(v==='Reserved'&&!$('#c-gr').value)$('#c-gr').value='reserved';
     $('#res-box').style.display=v==='Reserved'?'block':'none';return}
   if(el.dataset.actCh==='lg-type'){$('#lg-ded').value=el.selectedOptions[0].dataset.ded||0;return}
@@ -1528,6 +1573,13 @@ document.addEventListener('click',async e=>{
   else if(act==='pg'){S.f.page+=+a.dataset.d;loadView();window.scrollTo(0,0)}
   else if(act==='client'){if(id)clientModal(id)}
   else if(act==='call'){e.stopPropagation();callModal(id)}
+  else if(act==='fu-quick'){const k=a.dataset.k,pad=n=>String(n).padStart(2,'0');let d=new Date();
+    if(k==='h1')d=new Date(Date.now()+3600e3);else if(k==='h2')d=new Date(Date.now()+7200e3);else if(k==='ev')d.setHours(19,0,0,0);else if(k==='tm'){d.setDate(d.getDate()+1);d.setHours(12,0,0,0)}
+    if(k==='x'){$('#c-fu').value='';$('#c-fut').value='';return}
+    $('#c-fu').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());$('#c-fut').value=pad(d.getHours())+':'+pad(d.getMinutes());return}
+  else if(act==='rem-open'){S.f.tab='due';S.f.page=0;if(S.view!=='leads')location.hash='leads';else loadView();return}
+  else if(act==='rem-alerts'){try{await Notification.requestPermission()}catch(_){}render();return}
+  else if(act==='rem-hide'){S.rem.hidden=S.rem.sig;render();return}
   else if(act==='save-call'){a.disabled=true;await saveCall(id);a.disabled=false}
   else if(act==='add-note'){const t=$('#cl-note').value.trim();if(!t)return;if(await guard(()=>addEvent(id,'note',{comment:t}),'Note added ✓'))clientModal(id)}
   else if(act==='join-group'){const l=(await Q(S.sb.from('leads').select('course').eq('id',id).single()));joinGroupModal(id,l.course)}
