@@ -190,6 +190,8 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .nbadge{display:inline-block;min-width:20px;padding:1px 6px;border-radius:10px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;text-align:center;margin-inline-start:6px;opacity:.85}
 tr.due-row td:first-child{box-shadow:inset 4px 0 0 var(--bad)}tr.due-row{background:var(--bad-soft)}tr.due-head td{background:var(--bad);color:#fff;font-weight:600;padding:6px 12px}
 .due-pill{background:var(--bad)!important;color:#fff!important;display:table;margin-bottom:4px;white-space:normal}.fuq{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg button{border:0;background:var(--surface);padding:7px 12px;font:inherit;font-size:13px;cursor:pointer;border-inline-end:1px solid var(--line)}.seg button:last-child{border-inline-end:0}.seg button.on{background:var(--accent);color:#fff}
+.sumtabs{display:flex;gap:6px;margin-bottom:8px}.sumtabs button{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}.sumtabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .gsum{width:100%;border-collapse:collapse}.gsum th,.gsum td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:start}.gsum td.num,.gsum th.num{text-align:center}.gsum tr.on td{background:var(--accent-soft,#eef2ff)}.gsum tr.tot td{border-top:2px solid var(--line);background:var(--bg)}
 .rlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}.rlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
 .pstats{display:flex;flex-wrap:wrap;gap:8px}.pstats div{background:var(--bg);border-radius:10px;padding:8px 12px;min-width:92px}.pstats b{display:block;font-size:18px}.pstats span{font-size:12px;color:var(--muted)}
@@ -1101,7 +1103,7 @@ function roundGroups(ents,roundName){
 const NONE_LBL='Group not chosen';
 const inRound=e=>e.status!=='Withdrawn'&&e.status!=='Deferred out';
 async function loadRounds(){
-  if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};loadSeats();
+  if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:'',att:'in',ag:''};loadSeats();
   const [rounds,ents]=await Promise.all([Q(S.sb.from('rounds').select('*')),S.rd.round?all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id')):all(()=>S.sb.from('round_entries').select('round_id,status,location'))]);
   rounds.sort((a,b)=>(a.status==='Closed')-(b.status==='Closed')||rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));
   S.d.rounds={rounds,ents};
@@ -1121,10 +1123,13 @@ function roundsListView(D){
     <div class="hint">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${c.locs.size} group${c.locs.size===1?'':'s'}</div>
     <div class="rnums"><div><b>${act}</b><span>In the round</span></div><div><b>${c['Deferred in']||0}</b><span>Deferred in</span></div><div><b>${c['Deferred out']||0}</b><span>Deferred out</span></div><div><b>${c['Withdrawn']||0}</b><span>Withdrawn</span></div></div></button>`}).join('')||'<div class="empty">No rounds yet. Create one, or put a reservation in a group and its round appears here.</div>'}</div>`;
 }
+/* the agent's name without the phone number written next to it in the sheet */
+const agentName=e=>String(e.agent||'').replace(/[0-9٠-٩+\/\\-]+/g,' ').replace(/\s+/g,' ').trim()||'—';
+const ATT={in:e=>inRound(e),out:e=>!inRound(e),all:()=>true};
 function roundRows(D){
-  const q=S.rd.q.trim().toLowerCase();
+  const q=S.rd.q.trim().toLowerCase();const att=ATT[S.rd.att||'in']||ATT.all;
   const G=D.G||(D.G=roundGroups(D.ents,(D.rounds.find(r=>r.id===S.rd.round)||{}).name));
-  return D.ents.filter(e=>(S.rd.tab==='all'||G.tabOf(e)===S.rd.tab)&&(!S.rd.st||e.status===S.rd.st)
+  return D.ents.filter(e=>(S.rd.tab==='all'||G.tabOf(e)===S.rd.tab)&&att(e)&&(!S.rd.ag||agentName(e)===S.rd.ag)&&(!S.rd.st||e.status===S.rd.st)
     &&(!q||[e.name,e.phone,e.email,e.notes,e.agent,e.ref,e.received_on].some(v=>String(v||'').toLowerCase().includes(q))));
 }
 function roundSheetView(D){
@@ -1132,18 +1137,27 @@ function roundSheetView(D){
   const rows=roundRows(D);const sc={};D.ents.forEach(e=>sc[e.status]=(sc[e.status]||0)+1);
   const G=D.G||(D.G=roundGroups(D.ents,r.name));const tabs=G.tabs,none=G.none.length;
   if(S.rd.tab!=='all'&&S.rd.tab!=='_none'&&!tabs.some(t=>t.key===S.rd.tab))S.rd.tab='all';
+  const nIn=D.ents.filter(inRound).length,nOut=D.ents.length-nIn,noneIn=G.none.filter(inRound).length;
+  /* who sold the students in this round: attending vs. withdrawn, per agent */
+  const ags={};D.ents.forEach(e=>{const a=agentName(e);const o=ags[a]=ags[a]||{in:0,out:0};inRound(e)?o.in++:o.out++});
+  const agList=Object.entries(ags).sort((a,b)=>b[1].in-a[1].in||a[0].localeCompare(b[0]));
+  const agSum=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="gsum"><thead><tr><th>Agent</th><th class="num">Attending</th><th class="num">Withdrawn / left</th><th class="num">Total</th></tr></thead><tbody>
+   ${agList.map(([a,o])=>`<tr class="click ${S.rd.ag===a?'on':''}" data-act="rd-ag" data-k="${esc(a)}"><td class="ar" dir="auto"><b>${esc(a)}</b></td><td class="num"><b>${o.in}</b></td><td class="num">${o.out||''}</td><td class="num">${o.in+o.out}</td></tr>`).join('')}</tbody></table></div>`;
   const gsum=[...tabs,...(none?[{key:'_none',label:NONE_LBL,n:none,...G.none.reduce((a,e)=>(a[e.status]=(a[e.status]||0)+1,a),{})}]:[])];
   const summary=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="gsum"><thead><tr><th>Group</th><th class="num">In the round</th><th class="num">Deferred in</th><th class="num">Later start</th><th class="num">Deferred out</th><th class="num">Withdrawn</th><th class="num">Total</th><th class="num">Seats</th></tr></thead><tbody>
    ${gsum.map(t=>`<tr class="click ${S.rd.tab===t.key?'on':''}" data-act="rd-tab" data-k="${esc(t.key)}"><td class="ar" dir="auto"><b>${esc(t.label)}</b></td><td class="num"><b>${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)}</b></td><td class="num">${t['Deferred in']||''}</td><td class="num">${t['Later start']||''}</td><td class="num">${t['Deferred out']||''}</td><td class="num">${t['Withdrawn']||''}</td><td class="num">${t.n}</td><td class="num">${(()=>{const g=t.key==='_none'?null:S.groups.find(x=>x.id===matchGroup(r.name,t.label));if(!g||!g.capacity)return '—';const st=seatOf(g);return `<span class="pill ${st.full?'red':'green'}">${st.full?'Full':st.left+' left'} · ${st.taken}/${st.cap}</span>`})()}</td></tr>`).join('')}
    <tr class="tot click" data-act="rd-tab" data-k="all"><td><b>All groups</b></td><td class="num"><b>${D.ents.filter(inRound).length}</b></td><td class="num">${sc['Deferred in']||''}</td><td class="num">${sc['Later start']||''}</td><td class="num">${sc['Deferred out']||''}</td><td class="num">${sc['Withdrawn']||''}</td><td class="num">${D.ents.length}</td><td></td></tr></tbody></table></div>`;
   
   const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>{const g=S.groups.find(x=>x.id===matchGroup(r.name,l));const st=g?seatOf(g):{};return `<option value="${esc(l)}" ${st.full?'disabled':''}>${esc(l)}${st.full?' · FULL':st.cap?` · ${st.left} left`:''}</option>`}).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
-  return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${plural(D.ents.length,'student')} · ${esc(r.status)}</div></div><div class="sp"></div>
+  return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · <b>${plural(nIn,'student')} attending</b>${nOut?` · ${nOut} withdrawn / left`:''} · ${esc(r.status)}</div></div><div class="sp"></div>
    <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
-  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${none?`<button data-act="rd-tab" data-k="_none" class="tab-warn ${S.rd.tab==='_none'?'on':''}">⚠ ${NONE_LBL} · ${none}</button>`:''}${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto">${esc(t.label)} · ${t.n}</button>`).join('')}</div>
-  ${S.rd.tab==='all'?summary:''}${S.rd.tab==='_none'?`<div class="note">These students are in ${esc(r.name)} but haven't chosen a place / time yet. Pick their group from the list in the Group column, or open the row. When sales puts the reservation in a group, the row moves to its group here by itself.</div>`:''}
+  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All groups · ${nIn}</button>${noneIn?`<button data-act="rd-tab" data-k="_none" class="tab-warn ${S.rd.tab==='_none'?'on':''}">⚠ ${NONE_LBL} · ${noneIn}</button>`:''}${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto" title="${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)} attending of ${t.n}">${esc(t.label)} · ${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)}</button>`).join('')}</div>
+  ${S.rd.tab==='all'?`<div class="sumtabs"><button class="${S.rd.sum!=='ag'?'on':''}" data-act="rd-sum" data-k="gr">By group</button><button class="${S.rd.sum==='ag'?'on':''}" data-act="rd-sum" data-k="ag">By agent</button></div>${S.rd.sum==='ag'?agSum:summary}`:''}${S.rd.tab==='_none'?`<div class="note">These students are in ${esc(r.name)} but haven't chosen a place / time yet. Pick their group from the list in the Group column, or open the row. When sales puts the reservation in a group, the row moves to its group here by itself.</div>`:''}
   <div class="row"><input class="inp" data-in="rdq" id="rd-q" placeholder="Search name, mobile, email, notes…" value="${esc(S.rd.q)}" style="max-width:320px">
-   <select class="inp" data-ch="rd-st" id="rd-st" style="max-width:260px"><option value="">All statuses</option>${Object.keys(RST).map(s=>`<option value="${s}" ${S.rd.st===s?'selected':''}>${s} · ${sc[s]||0}</option>`).join('')}</select>
+   <div class="seg">${[['in','✓ Attending',nIn],['out','Withdrawn / left',nOut],['all','Everyone',D.ents.length]].map(([k,t,n])=>`<button class="${(S.rd.att||'in')===k?'on':''}" data-act="rd-att" data-k="${k}">${t} · ${n}</button>`).join('')}</div>
+   <select class="inp" data-ch="rd-ag" id="rd-ag" style="max-width:220px" aria-label="Agent"><option value="">All agents</option>${agList.map(([a,o])=>`<option value="${esc(a)}" ${S.rd.ag===a?'selected':''}>${esc(a)} · ${o.in}</option>`).join('')}</select>
+   <select class="inp" data-ch="rd-st" id="rd-st" style="max-width:200px" aria-label="Status"><option value="">All statuses</option>${Object.keys(RST).filter(k=>(ATT[S.rd.att||'in']||ATT.all)({status:k})).map(s=>`<option value="${s}" ${S.rd.st===s?'selected':''}>${s} · ${sc[s]||0}</option>`).join('')}</select>
+   ${S.rd.ag||S.rd.st||S.rd.q?'<button class="btn sm" data-act="rd-clear">Clear filters</button>':''}
    <div class="sp"></div><div class="rlegend">${Object.entries(RST).filter(([k])=>k!=='Active').map(([k,v])=>`<span><i style="background:${v.bd}"></i>${esc(k)}</span>`).join('')}</div></div>
   <div class="tbl-wrap sheet-wrap"><table class="sheet"><thead><tr><th>#</th>${RCOLS.map(([,t])=>`<th>${t}</th>`).join('')}</tr></thead><tbody>
   ${rows.map((e,i)=>`<tr class="click" data-act="rd-entry" data-id="${e.id}" style="${RST[e.status]?.bg?'background:'+RST[e.status].bg+';':''}box-shadow:inset 4px 0 0 ${RST[e.status]?.bd||'transparent'}"><td class="n">${i+1}${e.reservation_id?' <span class="pill accent" title="Added automatically from a reservation">auto</span>':''}</td>${RCOLS.map(([k])=>`<td class="${['name','agent','location','notes','plan','received_on'].includes(k)?'ar':''} c-${k}" dir="auto">${cell(e,k)}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${RCOLS.length+1}" class="empty">No students here${S.rd.q||S.rd.st?' match the filters':''}</td></tr>`}
@@ -1323,6 +1337,10 @@ async function saveMgrReport(){const m=S.modal;const done=$('#mr-done').value.tr
   if(await guard(()=>m.id?Q(S.sb.from('manager_reports').update(row).eq('id',m.id)):Q(S.sb.from('manager_reports').insert(row)),'Report saved ✓')){closeModal();loadView()}}
 
 async function roundsClick(act,a,id){
+  if(act==='rd-att'){S.rd.att=a.dataset.k;if(S.rd.st&&!(ATT[S.rd.att]||ATT.all)({status:S.rd.st}))S.rd.st='';render();return}
+  if(act==='rd-ag'){S.rd.ag=S.rd.ag===a.dataset.k?'':a.dataset.k;render();return}
+  if(act==='rd-sum'){S.rd.sum=a.dataset.k;render();return}
+  if(act==='rd-clear'){S.rd.ag='';S.rd.st='';S.rd.q='';render();return}
   const D=S.d.rounds;
   if(act==='rd-region'){S.rd.region=a.dataset.k;render()}
   else if(act==='rd-open'){S.rd={...S.rd,round:+id,tab:'all',q:'',st:''};loadView()}
@@ -1593,6 +1611,7 @@ document.addEventListener('change',async e=>{
   else if(k.startsWith('imp.')){impState()[k.slice(4)]=el.value;render()}
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
   else if(k==='rd-st'){S.rd.st=el.value;render()}
+  else if(k==='rd-ag'){S.rd.ag=el.value;render()}
   else if(k==='rd-loc'){let v=el.value;if(v==='__other'){v=(prompt('Group (place, day, time)')||'').trim();if(!v){el.value='';return}}if(v)await guard(()=>setEntryLoc(+el.dataset.id,v))}
   else if(k==='mr-date'){S.rf.mdate=el.value;loadView()}
   else if(k==='mr-d'){mrRefresh()}
@@ -1645,7 +1664,7 @@ document.addEventListener('click',async e=>{
   else if(act==='imp-skip'){impState().skipDup=a.checked;render()}
   else if(act==='do-import')doImport();
   // reservations
-  else if(act==='grp-round'){const r=(await Q(S.sb.from('rounds').select('id,name'))).find(x=>locKey(x.name)===a.dataset.k);if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};if(r){S.rd.round=r.id;S.rd.tab='all'}location.hash='rounds';return}
+  else if(act==='grp-round'){const r=(await Q(S.sb.from('rounds').select('id,name'))).find(x=>locKey(x.name)===a.dataset.k);if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:'',att:'in',ag:''};if(r){S.rd.round=r.id;S.rd.tab='all'}location.hash='rounds';return}
   else if(act==='grp-new')groupModal(null,a.dataset.k||'');
   else if(act==='grp-sync'){a.disabled=true;const n=await guard(()=>syncGroupsFromRounds());a.disabled=false;if(n!==false){toast(n===true||!n?'Everything is already here ✓':plural(n,'group')+' added ✓');loadView()}}
   else if(act==='grp-edit')groupModal(id);
