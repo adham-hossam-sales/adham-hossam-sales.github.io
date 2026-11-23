@@ -1543,7 +1543,7 @@ function abDate(e,r,round){
   if(r&&r.created_at)return new Date(r.created_at);
   const s=AD(e.booked_on||'').trim();if(!s)return null;
   let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return new Date(+m[1],m[2]-1,+m[3]);
-  m=s.match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2,4}))?/);if(!m)return null;
+  m=s.match(/^(\d{1,2})\s*[\/\\\-.]\s*(\d{1,2})(?:\s*[\/\\\-.]\s*(\d{2,4}))?/);if(!m)return null;
   const d=+m[1],mo=+m[2];if(!d||!mo||d>31||mo>12)return null;
   let y=m[3]?(+m[3]<100?2000+ +m[3]:+m[3]):null;
   if(!y){const ref=new Date(round&&round.created_at||Date.now());y=ref.getFullYear();if(mo-1>ref.getMonth()+1)y--}
@@ -1589,7 +1589,7 @@ function agentBookView(){
   const T=B.list.reduce((t,a)=>({n:t.n+a.n,in:t.in+a.in,out:t.out+a.out,sys:t.sys+a.sys,dups:t.dups+a.dups,warn:t.warn+a.warn}),{n:0,in:0,out:0,sys:0,dups:0,warn:0});
   const stp=e=>{const s=RST[e.status];return `<span class="pill" style="background:${s&&s.bg||'#f1f5f9'};border:1px solid ${s&&s.bd||'#cbd5e1'}">${esc(e.status||'')}</span>`};
   const detail=a=>`<tr class="ab-det"><td colspan="9" style="background:var(--soft,#f8fafc);padding:8px 10px"><div style="overflow-x:auto"><table class="mini"><thead><tr><th>#</th><th>Booked on</th><th>Client</th><th>Mobile</th><th>Group</th><th>Status</th><th>From</th><th>Checks</th></tr></thead><tbody>
-    ${a.rows.map((x,i)=>`<tr style="${x.dup?'opacity:.55':''}"><td class="num">${i+1}</td><td class="num" style="white-space:nowrap">${abFmt(x.date)}${!x.date&&x.e.booked_on?' <span class="hint">('+esc(x.e.booked_on)+')</span>':''}</td><td class="ar" dir="auto">${esc(x.e.name||'')}</td><td class="num" dir="ltr">${esc(x.e.phone||'')}</td><td class="ar" dir="auto">${esc(x.e.location||'')}</td><td>${stp(x.e)}</td><td><span class="pill ${x.src==='Sheet'?'':'blue'}">${x.src}</span></td>
+    ${a.rows.map((x,i)=>`<tr style="${x.dup?'opacity:.55':''}"><td class="num">${i+1}</td><td class="num" style="white-space:nowrap">${abFmt(x.date)}${!x.date?(x.e.booked_on?' <span class="hint">('+esc(x.e.booked_on)+')</span>':' <span class="hint">no date in sheet</span>'):''}</td><td class="ar" dir="auto">${esc(x.e.name||'')}</td><td class="num" dir="ltr">${esc(x.e.phone||'')}</td><td class="ar" dir="auto">${esc(x.e.location||'')}</td><td>${stp(x.e)}</td><td><span class="pill ${x.src==='Sheet'?'':'blue'}">${x.src}</span></td>
      <td style="font-size:12px">${x.dup?'<b>Not counted again</b> · ':''}${x.flags.length?x.flags.map(f=>'<span style="color:#b45309">⚠ '+esc(f)+'</span>').join('<br>'):'<span style="color:#16a34a">✓</span>'}</td></tr>`).join('')}</tbody></table></div></td></tr>`;
   return `<div class="card" style="padding:0" id="agentbook"><div style="padding:16px 16px 8px;display:flex;flex-direction:column;gap:8px">
    <div class="row"><h2>Agent bookings by round</h2><div class="sp"></div>${rsel}<button class="btn sm" data-act="ab-xls">⬇ Excel</button></div>
