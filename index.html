@@ -1192,7 +1192,7 @@ function entryModal(id){
    <div class="row">${f('email','Email')}<div class="field"><label for="re-status">Status</label><select class="inp" id="re-status">${Object.keys(RST).map(s=>`<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
    <div class="field"><label for="re-notes">Notes</label><textarea class="inp ar" dir="auto" id="re-notes" rows="3">${esc(e.notes||'')}</textarea></div>
    ${id?`<div class="card" style="background:var(--bg)"><h3 style="margin-bottom:8px">Defer to another round</h3><div class="row"><select class="inp" id="re-to" style="flex:1"><option value="">— Pick the round —</option>${D.rounds.filter(r=>r.id!==S.rd.round).map(r=>`<option value="${r.id}">${esc(r.name)} · ${esc(r.region)}</option>`).join('')}</select><button class="btn" data-act="rd-defer" data-id="${id}">Defer</button></div>
-    <div class="hint">Marks this row "Deferred out" here and adds the student to the other round as "Deferred in", with a note on both.</div></div>`:''}
+    <div class="hint">Moves the student to the other round as "Deferred in" with all their details and a note. They leave this round.</div></div>`:''}
   </div><div class="mf"><button class="btn pri" data-act="rd-save-entry">Save</button>${id?`<button class="btn bad" data-act="rd-del-entry" data-id="${id}">Delete row</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`,true);
 }
 function readEntry(){const g=k=>{const el=$('#re-'+k);return el?el.value.trim():''};
@@ -1238,6 +1238,13 @@ async function fetchSheetTab(url){const id=(String(url).match(/\/d\/([\w-]+)/)||
   const t=await r.text();if(/^\s*<!DOCTYPE|<html/i.test(t.slice(0,200)))throw new Error('Could not read the sheet. Make sure "Anyone with the link" can view it.');return parseCSV(t)}
 async function ensureRound(name,region){name=name.trim();let r=(await Q(S.sb.from('rounds').select('*').eq('name',name).maybeSingle()));
   if(!r)r=await Q(S.sb.from('rounds').insert({name,region:region||'Cairo'}).select('*').single());return r}
+/* a student deferred to another round lives only there: drop the "Deferred out" copy, keeping its notes on the remaining row */
+async function dedupeDeferred(){const ents=await all(()=>S.sb.from('round_entries').select('id,round_id,phone,status,notes'));const by={};let n=0;
+  ents.forEach(e=>{const k=digits(e.phone);if(k.length>=8)(by[k]=by[k]||[]).push(e)});
+  for(const a of Object.values(by)){const outs=a.filter(x=>x.status==='Deferred out'),keep=a.find(x=>x.status!=='Deferred out');if(!outs.length||!keep)continue;
+    let notes=keep.notes||'';outs.forEach(o=>{if(o.notes&&!notes.includes(o.notes.split(' / ')[0]))notes=[o.notes,notes].filter(Boolean).join(' / ')});
+    if(notes!==(keep.notes||''))await Q(S.sb.from('round_entries').update({notes}).eq('id',keep.id));await Q(S.sb.from('round_entries').delete().in('id',outs.map(o=>o.id)));n+=outs.length}
+  return n}
 async function importRows(roundName,region,rows,opts={}){
   const layout=opts.layout||sheetLayout(rows);const r=await ensureRound(roundName,region);
   const have=await all(()=>S.sb.from('round_entries').select('id,phone,name,location').eq('round_id',r.id));
@@ -1248,6 +1255,7 @@ async function importRows(roundName,region,rows,opts={}){
     e.status=(opts.statusMap&&opts.statusMap[digits(e.phone)])||guessStatus(e.notes);const row={...e,group_id:matchGroup(r.name,e.location),round_id:r.id,source:'sheet',sort:have.length+out.length+1,updated_by:S.me.id};out.push(row);byKey.set(k,row)});
   for(let i=0;i<out.length;i+=200)await Q(S.sb.from('round_entries').insert(out.slice(i,i+200)));
   for(const h of fill)await Q(S.sb.from('round_entries').update({location:h.location}).eq('id',h.id));
+  await dedupeDeferred();
   return {round:r,added:out.length,skipped:skip,layout}}
 function importModal(){
   S.modal={type:'rimport'};const D=S.d.rounds;
@@ -1333,9 +1341,8 @@ async function roundsClick(act,a,id){
   else if(act==='rd-del-entry'){if(a.dataset.sure!=='1'){a.dataset.sure='1';a.textContent='Click again to delete';return}
     if(await guard(()=>Q(S.sb.from('round_entries').delete().eq('id',+id)),'Row deleted')){closeModal();loadView()}}
   else if(act==='rd-defer'){const to=+$('#re-to').value;if(!to){toast('Pick the round to defer to');return}const e=D.ents.find(x=>x.id===+id);const from=D.rounds.find(r=>r.id===S.rd.round),tgt=D.rounds.find(r=>r.id===to);
-    const {id:_i,reservation_id,created_at,updated_at,round_id,sort,...copy}=e;
-    if(await guard(async()=>{await Q(S.sb.from('round_entries').insert({...copy,round_id:to,group_id:matchGroup(tgt.name,copy.location),status:'Deferred in',source:'manual',notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_by:S.me.id}));
-      await Q(S.sb.from('round_entries').update({status:'Deferred out',notes:[e.notes,'تأجيل ل'+tgt.name].filter(Boolean).join(' / '),updated_at:nowISO(),updated_by:S.me.id}).eq('id',e.id))},'Deferred to '+tgt.name+' ✓')){closeModal();loadView()}}
+    /* one person = one row: the student moves to the new round with all their details, and leaves this one */
+    if(await guard(()=>Q(S.sb.from('round_entries').update({round_id:to,status:'Deferred in',group_id:null,location:null,notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_at:nowISO(),updated_by:S.me.id}).eq('id',e.id)),'Moved to '+tgt.name+' ✓')){closeModal();loadView()}}
   else if(act==='rd-xlsx')exportRoundXlsx();
   else if(act==='rd-import')importModal();
   else if(act==='rd-import-go'){const url=$('#im-url').value.trim(),rn=$('#im-round').value.trim();if(!url||!rn){toast('Add the link and the round');return}
