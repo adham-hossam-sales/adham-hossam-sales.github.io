@@ -184,8 +184,10 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .sheet td{padding:6px 8px;vertical-align:top}.sheet td.c-notes{min-width:260px;max-width:380px}.sheet td.c-email{font-size:11.5px}.sheet td.c-name{font-weight:600;min-width:150px}
 .sheet td.c-location{min-width:170px}.rst{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .tabs button.tab-warn{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}.tabs button.tab-warn.on{background:var(--warn);color:#fff}.locpick{min-width:170px;padding:4px 8px;font-size:13px;border-color:var(--warn);background:var(--warn-soft)}
+.mark{unicode-bidi:isolate;direction:ltr;display:inline-block;font-size:11.5px;font-weight:600;color:var(--muted);margin-inline-start:8px;white-space:nowrap}.mark.due{color:var(--bad)}.fu-due{color:var(--bad);font-weight:600}
+.rgroup{border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}.rgroup h3{margin:0}
 .rembar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 4px;padding:10px 14px;border-radius:10px;background:var(--bad-soft);border:1px solid var(--bad);color:var(--bad)}.rembar b{white-space:nowrap}.rembar .ar{color:var(--ink)}
-.nbadge{display:inline-block;min-width:20px;padding:1px 6px;border-radius:10px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;text-align:center;margin-inline-start:6px}
+.nbadge{display:inline-block;min-width:20px;padding:1px 6px;border-radius:10px;background:var(--bad);color:#fff;font-size:10px;font-weight:700;text-align:center;margin-inline-start:6px;opacity:.85}
 tr.due-row td:first-child{box-shadow:inset 4px 0 0 var(--bad)}tr.due-row{background:var(--bad-soft)}tr.due-head td{background:var(--bad);color:#fff;font-weight:600;padding:6px 12px}
 .due-pill{background:var(--bad)!important;color:#fff!important;display:table;margin-bottom:4px;white-space:normal}.fuq{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .gsum{width:100%;border-collapse:collapse}.gsum th,.gsum td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:start}.gsum td.num,.gsum th.num{text-align:center}.gsum tr.on td{background:var(--accent-soft,#eef2ff)}.gsum tr.tot td{border-top:2px solid var(--line);background:var(--bg)}
@@ -234,6 +236,7 @@ const NO_REACH=['No Answer','Not Available'];
 const QUAL_DEFAULT={'Call Later':true,'Send Details WP':true,'Possible Lead':true,'Reserved':true,'Not Interested':false};
 const GROUPS=[['round','Round'],['station','Sales Station'],['interested','Interested'],['reserved','Reserved']];
 const GR=Object.fromEntries(GROUPS);
+const LOST=['Wants a different course','Price is too high','Timing isn\'t right now','Place is too far','Already took a similar course','Just browsing / no real need','Other'];
 const GOVS=['Cairo','Giza','Alexandria','Qalyubia','Dakahlia','Sharqia','Gharbia','Monufia','Beheira','Kafr El Sheikh','Damietta','Port Said','Ismailia','Suez','Faiyum','Beni Suef','Minya','Asyut','Sohag','Qena','Luxor','Aswan','Red Sea','New Valley','Matrouh','North Sinai','South Sinai','Outside Egypt'];
 const GOV_AR={'القاهرة':'Cairo','القاهره':'Cairo','الجيزة':'Giza','الجيزه':'Giza','الإسكندرية':'Alexandria','الاسكندرية':'Alexandria','اسكندرية':'Alexandria','القليوبية':'Qalyubia','الدقهلية':'Dakahlia','الدقهليه':'Dakahlia','الشرقية':'Sharqia','الغربية':'Gharbia','المنوفية':'Monufia','البحيرة':'Beheira','كفر الشيخ':'Kafr El Sheikh','دمياط':'Damietta','بورسعيد':'Port Said','الإسماعيلية':'Ismailia','الاسماعيلية':'Ismailia','السويس':'Suez','الفيوم':'Faiyum','بني سويف':'Beni Suef','المنيا':'Minya','أسيوط':'Asyut','اسيوط':'Asyut','سوهاج':'Sohag','قنا':'Qena','الأقصر':'Luxor','الاقصر':'Luxor','أسوان':'Aswan','اسوان':'Aswan','البحر الأحمر':'Red Sea','الوادي الجديد':'New Valley','مطروح':'Matrouh','شمال سيناء':'North Sinai','جنوب سيناء':'South Sinai'};
 const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent',ops:'Rounds (Operations)'};
@@ -273,7 +276,10 @@ const CLOSED_ST=['Reserved','Not Interested'];
 const fuDue=l=>!!l&&!CLOSED_ST.includes(l.status)&&(l.follow_up_at?new Date(l.follow_up_at)<=new Date():!!l.follow_up&&l.follow_up<=today());
 const fuLabel=l=>l.follow_up_at?(dayOf(l.follow_up_at)===today()?'Today ':fmtDay(dayOf(l.follow_up_at))+' ')+fmtTime(l.follow_up_at):l.follow_up?fmtDay(l.follow_up):'';
 const dueOr=()=>`follow_up_at.lte.${new Date().toISOString()},and(follow_up_at.is.null,follow_up.lte.${today()})`;
-const fuBadge=l=>`<span class="pill red due-pill">⏰ ${l.status==='Call Later'?'Call later':'Follow-up'} · ${esc(fuLabel(l))} · not called yet</span>`;
+/* a small mark next to the client's name: ⏰ for call-backs, a red dot for follow-ups */
+const fuMark=l=>{if(CLOSED_ST.includes(l.status)||!(l.follow_up||l.follow_up_at))return '';const due=fuDue(l),cl=l.status==='Call Later';
+  if(!due&&!cl)return '';const tip=(cl?'Call back ':'Follow-up ')+fuLabel(l)+(due?' — not called yet':'');
+  return `<span class="mark ${due?'due':''}" title="${esc(tip)}">${cl?'⏰ '+esc(l.follow_up_at?fmtTime(l.follow_up_at):'Call later'):'● Follow-up'}</span>`};
 const fmtWhen=iso=>{if(!iso)return '—';const d=dayOf(iso),t=today();if(d===t)return 'Today '+fmtTime(iso);if(d===addDays(t,-1))return 'Yesterday '+fmtTime(iso);return fmtDay(d)+' '+fmtTime(iso)};
 const nf=n=>(+n||0).toLocaleString('en-US');
 const egp=n=>'EGP '+nf(Math.round(+n||0));
@@ -410,13 +416,13 @@ function view(){
   const showPeriod=['dashboard','leads','reservations'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
   <aside class="rail" id="rail"><div class="brand"><img src="${esc(logoSrc())}" alt=""><div><b>${esc(brand().name)}</b><span>${esc(brand().sub)}</span></div></div>
-   <nav class="nav">${navs.map(([k,t])=>`<a href="#${k}" class="${S.view===k?'on':''}">${t}${k==='leads'&&S.rem&&S.rem.n?` <span class="nbadge" title="Call-backs due">${S.rem.n}</span>`:''}</a>`).join('')}</nav>
+   <nav class="nav">${navs.map(([k,t])=>`<a href="#${k}" class="${S.view===k?'on':''}">${t}${k==='leads'&&S.rem&&S.rem.n?` <span class="nbadge" title="Call-backs / follow-ups due now">${S.rem.n}</span>`:''}</a>`).join('')}</nav>
    <div class="me"><div><b class="ar">${esc(me.name)}</b>${ROLES[me.role]}</div><button data-act="pw-mine">Change my password</button><button data-act="logout">Sign out</button></div></aside>
   <div class="main">
    <div class="top"><button class="btn sm menu-btn" data-act="menu" aria-label="Menu">☰</button>
     ${showPeriod?`<select class="inp" id="period" data-ch="period" aria-label="Period">${PERIODS.map(([k,t])=>`<option value="${k}" ${S.period===k?'selected':''}>${t}</option>`).join('')}</select>`:''}
     <div class="sp"></div>${S.loading?'<span class="spin" aria-label="Loading"></span>':''}<button class="btn sm" data-act="refresh">Refresh</button></div>
-   ${remBar()}<div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView}[S.view]||dashView)()}</div>
+   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView}[S.view]||dashView)()}</div>
   </div></div>`;
 }
 /* ===== reminders: the agent's own follow-ups / call-backs whose time has come ===== */
@@ -430,7 +436,7 @@ async function checkReminders(force){
   const old=S.rem||{seen:new Set()};const seen=old.seen||new Set();const fresh=list.filter(l=>!seen.has(l.id+'|'+(l.follow_up_at||l.follow_up)));
   fresh.forEach(l=>seen.add(l.id+'|'+(l.follow_up_at||l.follow_up)));
   const sig=list.map(l=>l.id).join(',');S.rem={n:list.length,list,seen,sig,hidden:old.hidden};
-  if(fresh.length&&old.sig!==undefined){const l=fresh[0];const msg=`⏰ Call back ${l.name||l.phone}${fresh.length>1?' and '+(fresh.length-1)+' more':''}`;toast(msg);
+  if(false){const l=fresh[0];const msg=`⏰ Call back ${l.name||l.phone}${fresh.length>1?' and '+(fresh.length-1)+' more':''}`;toast(msg);
     try{if(typeof Notification!=='undefined'&&Notification.permission==='granted'){const n=new Notification('Call-back due',{body:`${l.name||l.phone} · ${l.status==='Call Later'?'call later':'follow-up'} ${fuLabel(l)}`,tag:'fu-'+l.id});n.onclick=()=>{window.focus();S.f.tab='due';location.hash='leads';loadView()}}}catch(_){}}
   if(force||old.n!==S.rem.n||old.sig!==sig){const ae=document.activeElement;if(!(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)&&!S.modal))render()}}
 setInterval(()=>{if(!document.hidden)checkReminders(false)},60000);
@@ -462,7 +468,7 @@ async function loadView(){
 async function loadDash(){
   const [from,to]=periodRange();
   const [leads,calls,res,reps]=await Promise.all([
-    all(()=>S.sb.from('leads').select('id,agent_id,status,course,platform,created_at').gte('created_at',startISO(from)).lt('created_at',endISO(to)).order('created_at')),
+    all(()=>S.sb.from('leads').select('id,agent_id,status,course,platform,created_at,lost_reason').gte('created_at',startISO(from)).lt('created_at',endISO(to)).order('created_at')),
     all(()=>{let q=S.sb.from('lead_events').select('lead_id,by,status,at').eq('type','call').gte('at',startISO(from)).lt('at',endISO(to)).order('at');if(S.me.role==='agent')q=q.eq('by',S.me.id);return q}),
     all(()=>S.sb.from('reservations').select('agent_id,amount,course,res_date,status').gte('res_date',from).lte('res_date',to).neq('status','Cancelled').order('res_date')),
     Q(S.sb.from('daily_reports').select('agent_id').eq('report_date',today()))]);
@@ -498,6 +504,7 @@ function dashView(){
    ${rows.map((r,i)=>`<tr><td class="n">${i+1}</td><td data-l="Agent"><b class="ar">${esc(r.a.name)}</b>${r.a.intern?' <span class="pill accent">Intern</span>':''}</td><td class="n" data-l="Leads">${r.x.leads}</td><td class="n" data-l="Calls">${r.x.calls}</td><td class="n" data-l="Reached">${r.x.reached.size}</td><td class="n" data-l="WhatsApp">${r.x.wp.size}</td><td class="n" data-l="Reservations"><b>${r.x.res}</b></td><td class="n" data-l="Revenue">${egp(r.x.rev)}</td><td class="n" data-l="Conversion">${pct(r.x.res,r.x.leads)}</td></tr>`).join('')||'<tr><td colspan="9" class="empty">No agents yet. Add them on the Team & Accounts page.</td></tr>'}
    </tbody></table></div></div>
   <div class="grid2"><div class="card"><h2>Reservations per day</h2>${trend}</div><div class="card"><h2>Lead status</h2>${barsOf(status,true)}</div></div>
+  ${(()=>{const w={};D.leads.forEach(l=>{if(l.status==='Not Interested')w[l.lost_reason||'Reason not recorded']=(w[l.lost_reason||'Reason not recorded']||0)+1});return Object.keys(w).length?`<div class="card"><h2>Why clients said no</h2>${barsOf(w)}</div>`:''})()}
   <div class="grid2"><div class="card"><h2>Leads by channel</h2>${barsOf(plat)}</div>
    <div class="card"><h2>Courses</h2>${Object.keys(course).length?`<div class="bars">${Object.entries(course).sort((a,b)=>b[1].leads-a[1].leads).map(([c,v])=>`<div><div class="l"><span>${esc(c)}</span><span class="num">${plural(v.leads,'lead')} · ${v.res} reserved · ${egp(v.rev)}</span></div><div class="bar"><i style="width:${v.leads*100/Math.max(...Object.values(course).map(x=>x.leads),1)}%"></i></div></div>`).join('')}</div>`:'<div class="empty">No data</div>'}</div></div>`;
 }
@@ -513,7 +520,7 @@ function leadsQuery(sel,opts){
   let qb=S.sb.from('leads').select(sel,opts);const f=S.f;const [from,to]=periodRange();
   if(f.tab==='new')qb=qb.eq('status','New');
   else if(f.tab==='fu')qb=qb.lte('follow_up',today()).not('status','in','("Reserved","Not Interested")');
-  else if(f.tab==='due')qb=qb.or(dueOr()).not('status','in','("Reserved","Not Interested")');
+  else if(f.tab==='later')qb=qb.eq('status','Call Later');
   else if(f.tab==='res')qb=qb.eq('status','Reserved');
   if(f.tab==='all'&&!f.q.trim())qb=qb.gte('created_at',startISO(from)).lt('created_at',endISO(to));
   if(f.status)qb=qb.eq('status',f.status);
@@ -528,7 +535,7 @@ async function loadDue(agent){let q=S.sb.from('leads').select('*').or(dueOr()).n
   if(S.me.role==='agent')q=q.eq('agent_id',S.me.id);else if(agent)q=agent==='none'?q.is('agent_id',null):q.eq('agent_id',agent);
   const f=S.f;if(f.course)q=q.eq('course',f.course);if(f.platform)q=q.eq('platform',f.platform);return await Q(q)}
 async function loadLeads(){
-  const f=S.f;const fu=f.tab==='fu'||f.tab==='due';let qb=leadsQuery('*',{count:'exact'});
+  const f=S.f;const fu=f.tab==='fu'||f.tab==='later';let qb=leadsQuery('*',{count:'exact'});
   qb=fu?qb.order('follow_up',{ascending:true}).order('follow_up_at',{ascending:true,nullsFirst:true}):qb.order('created_at',{ascending:false});
   const [r,due]=await Promise.all([Q(qb.range(f.page*PAGE,f.page*PAGE+PAGE-1)),
     /* call-backs whose time has come show on top of the new calls, flagged, until someone calls them */
@@ -537,7 +544,7 @@ async function loadLeads(){
 }
 function leadsView(){
   const D=S.d.leads;const f=S.f;const mgr=isMgr();const t=today();
-  const tabs=[['all','All (by period)'],['new','New calls'],['due',`⏰ Call-backs due${S.rem&&S.rem.n?' · '+S.rem.n:''}`],['fu','Follow-ups (today & late)'],['res','Reserved']];
+  const tabs=[['all','All (by period)'],['new','New calls'],['later','⏰ Call later'],['fu','Follow-ups'],['res','Reserved']];
   const count=D?D.count:0;const pages=Math.max(1,Math.ceil(count/PAGE));
   return `<div class="head"><div><h1>${S.me.role==='agent'?'My Leads':S.me.role==='tl'?'Team Leads':'All Leads'}</h1><div class="sub">${D?plural(count,'lead'):'Loading…'}</div></div><div class="sp"></div>
    ${mgr?`<button class="btn" data-act="leads-csv">Export CSV</button><a class="btn pri" href="#import">+ Import leads</a>`:''}</div>
@@ -549,16 +556,15 @@ function leadsView(){
    ${mgr?`<select class="inp ar" data-ch="f.agent" id="f-ag"><option value="">All agents</option>${isAdmin()?`<option value="none" ${f.agent==='none'?'selected':''}>Unassigned</option>`:''}${myAgents().map(a=>`<option value="${a.id}" ${f.agent===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>`:''}</div>
   ${mgr&&S.sel.size?`<div class="note info row">${plural(S.sel.size,'lead')} selected · Move to <select class="inp ar" id="bulk-to"><option value="">— Pick an agent —</option>${myAgents().map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select><button class="btn sm pri" data-act="bulk-move">Move</button><button class="btn sm" data-act="sel-clear">Clear</button></div>`:''}
   <div class="tbl-wrap"><table class="cards"><thead><tr>${mgr?'<th><input type="checkbox" data-act="sel-all" aria-label="Select all on this page"></th>':''}<th>Client</th><th>Course · Channel</th>${mgr?'<th>Agent</th>':''}<th>Status</th><th>Last call</th><th>Calls</th><th>Follow-up</th><th>Came in</th><th></th></tr></thead><tbody>
-  ${D&&D.due&&D.due.length?`<tr class="due-head"><td colspan="10">⏰ ${plural(D.due.length,'call-back')} due now, not called yet</td></tr>`:''}
-  ${D?(D.due||[]).concat(D.rows).map(l=>`<tr class="click ${fuDue(l)?'due-row':''}" data-act="client" data-id="${l.id}">
+  ${D?(D.due||[]).concat(D.rows).map(l=>`<tr class="click" data-act="client" data-id="${l.id}">
    ${mgr?`<td data-act="noop"><input type="checkbox" data-act="sel" data-id="${l.id}" ${S.sel.has(l.id)?'checked':''} aria-label="Select"></td>`:''}
-   <td data-l="Client"><div>${fuDue(l)?fuBadge(l):''}<b class="ar">${esc(l.name||'Unknown')}</b><span class="s num">${esc(l.phone)}</span>${l.city?`<span class="s">${esc(l.city)}</span>`:''}</div></td>
+   <td data-l="Client"><div><span><bdi><b class="ar">${esc(l.name||'Unknown')}</b></bdi>${fuMark(l)}</span><span class="s num">${esc(l.phone)}</span>${l.city?`<span class="s">${esc(l.city)}</span>`:''}</div></td>
    <td data-l="Course"><div>${esc(l.course||'—')}<span class="s">${esc(l.platform||'')}</span></div></td>
    ${mgr?`<td data-l="Agent" class="ar">${esc(pname(l.agent_id))}</td>`:''}
-   <td data-l="Status"><div>${pill(l.status)}${l.interest_group?`<span class="s">${GR[l.interest_group]||''}</span>`:''}${l.group_id?`<span class="s">In group: ${esc(groupName(l.group_id))}</span>`:''}</div></td>
+   <td data-l="Status"><div>${pill(l.status)}${l.status==='Not Interested'&&l.lost_reason?`<span class="s">${esc(l.lost_reason)}</span>`:''}${l.group_id?`<span class="s">In group: ${esc(groupName(l.group_id))}</span>`:''}</div></td>
    <td data-l="Last call">${l.last_call_at?fmtWhen(l.last_call_at):'<span class="s">Not called yet</span>'}</td>
    <td data-l="Calls" class="n">${l.calls_count||0}</td>
-   <td data-l="Follow-up">${l.follow_up?`<span class="pill ${fuDue(l)?'red':l.follow_up<=t?'amber':''}">${esc(fuLabel(l))}</span>`:'—'}</td>
+   <td data-l="Follow-up">${l.follow_up?`<span class="${fuDue(l)?'fu-due':''}">${esc(fuLabel(l))}</span>`:'—'}</td>
    <td data-l="Came in" class="num">${fmtDay(dayOf(l.created_at))}</td>
    <td><button class="btn sm pri" data-act="call" data-id="${l.id}">Call</button></td></tr>`).join('')||`<tr><td colspan="10" class="empty">No leads here</td></tr>`:`<tr><td colspan="10" class="empty"><span class="spin"></span></td></tr>`}
   </tbody></table></div>
@@ -629,7 +635,7 @@ function eventLine(e){
   let body='';
   if(e.type==='created')body=`Came in as a lead from <b>${esc(d.platform||'—')}</b> for <b>${esc(d.course||'—')}</b>${d.agent_id?` · assigned to <span class="ar">${esc(pname(d.agent_id))}</span>`:' · unassigned'}`;
   else if(e.type==='reassigned')body=`Moved from <span class="ar">${esc(pname(d.from))}</span> to <span class="ar">${esc(pname(d.to))}</span>`;
-  else if(e.type==='call')body=`Call · ${pill(e.status)}${d.qualified===true?' <span class="pill green">Qualified</span>':d.qualified===false?' <span class="pill red">Not qualified</span>':''}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
+  else if(e.type==='call')body=`Call · ${pill(e.status)}${d.qualified===true?' <span class="pill green">Qualified</span>':d.qualified===false?' <span class="pill red">Not qualified</span>':''}${d.reason?` <span class="pill">${esc(d.reason)}</span>`:''}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
   else if(e.type==='reserved')body=`<b>Reserved</b> ${esc(d.course||'')}${d.group_id?' · '+esc(groupName(d.group_id)):''} · ${egp(d.amount)} (${esc(d.payment||'')}, ${esc(d.method||'')}) · <span class="num">${esc(d.code||'')}</span>`;
   else if(e.type==='payment')body=`<b>Payment</b> ${egp(d.amount)} · ${esc(d.method||'')} · <span class="num">${esc(d.code||'')}</span>${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
   else if(e.type==='refund')body=`<b style="color:var(--bad)">Refund</b> ${egp(d.amount)} · ${esc({overpaid:'paid more than the price',cancelled:'cancelled',other:'other'}[d.reason]||d.reason||'')} · ${esc(d.method||'')}${d.refund_phone?` to <span class="num">${esc(d.refund_phone)}</span>`:''}${d.refund_name?` (<span class="ar">${esc(d.refund_name)}</span>)`:''} · <span class="num">${esc(d.code||'')}</span>${d.closed?' · reservation closed':''}${d.refund_why?`<div class="ar" dir="auto"><b>Why:</b> ${esc(d.refund_why)}</div>`:''}${e.comment?`<div class="ar" dir="auto">${esc(e.comment)}</div>`:''}`;
@@ -669,7 +675,7 @@ async function callModal(id){
    <div class="row"><div class="field"><label for="c-st">Status <i>*</i></label><select class="inp" id="c-st" data-act-ch="c-st"><option value="">— Select —</option>${STATUSES.filter(s=>s.k!=='New').map(s=>`<option>${s.k}</option>`).join('')}</select></div>
     <div class="field"><label for="c-q">Qualified?</label><select class="inp" id="c-q"><option value="">Not set</option><option value="1">Qualified</option><option value="0">Not qualified</option></select></div></div>
    <div class="field"><label for="c-cm">Comment <i>*</i></label><textarea class="inp ar" dir="auto" id="c-cm" rows="3" placeholder="What did the client say?"></textarea></div>
-   <div class="row"><div class="field"><label for="c-gr">Interest group</label><select class="inp" id="c-gr"><option value="">—</option>${GROUPS.map(([k,v])=>`<option value="${k}" ${l.interest_group===k?'selected':''}>${v}</option>`).join('')}</select></div>
+   <div class="row"><div class="field" id="why-box" style="display:none"><label for="c-why">Why not interested? <i>*</i></label><select class="inp" id="c-why"><option value="">— Pick the reason —</option>${LOST.map(r=>`<option>${esc(r)}</option>`).join('')}</select></div>
     <div class="field"><label for="c-fu">Next follow-up / call back</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input type="date" class="inp" id="c-fu" min="${t}" value="${esc(l.follow_up||'')}"><input type="time" class="inp" id="c-fut" aria-label="Time" value="${l.follow_up_at?hhmm(l.follow_up_at):''}" style="max-width:130px"></div>
      <div class="fuq">${[['h1','In 1 hour'],['h2','In 2 hours'],['ev','Today 7 PM'],['tm','Tomorrow 12 PM'],['x','Clear']].map(([k,v])=>`<button type="button" class="btn sm" data-act="fu-quick" data-k="${k}">${v}</button>`).join('')}</div>
      <div class="hint" id="c-fu-h">Pick a time and it pops up as a reminder when it comes. Same day is fine.</div></div></div>
@@ -688,7 +694,10 @@ async function callModal(id){
    <details><summary style="cursor:pointer;font-weight:600">History (${F.events.length})</summary><div class="timeline" style="margin-top:8px;max-height:260px;overflow:auto">${F.events.slice().reverse().map(eventLine).join('')}</div></details>
   </div><div class="mf"><button class="btn pri" data-act="save-call" data-id="${l.id}">Save</button><button class="btn" data-act="close">Cancel</button></div>`);
 }
-function groupOptions(course,withRounds){const gs=S.groups.filter(g=>g.active&&(!course||g.course===course));const rn=withRounds?[...new Set(gs.map(g=>locKey(g.name)).filter(Boolean))]:[];return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${rn.length?`<optgroup label="Round known, place / time not chosen yet">${rn.map(n=>`<option value="r:${esc(n)}">${esc(n)} · group not chosen yet</option>`).join('')}</optgroup><optgroup label="Group (place / time)">`:''}${gs.map(g=>`<option value="${g.id}" data-mode="${esc(g.mode||'')}">${esc(g.name)}${g.location?' · '+esc(g.location):''}${g.schedule?' · '+esc(g.schedule):''}${g.start_date?' · starts '+fmtDay(g.start_date):''}</option>`).join('')}${rn.length?'</optgroup>':''}`}
+function groupOptions(course,withRounds){const gs=S.groups.filter(g=>g.active&&(!course||!g.course||g.course===course));
+  const byR={};gs.forEach(g=>{const k=locKey(g.name);(byR[k]=byR[k]||[]).push(g)});const names=Object.keys(byR).sort((a,b)=>rnum(b)-rnum(a)||a.localeCompare(b));
+  const gl=g=>[g.location,g.schedule].filter(Boolean).join(' · ')||g.name;
+  return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${names.map(n=>`<optgroup label="${esc(n)}">${withRounds?`<option value="r:${esc(n)}">${esc(n)} · place not chosen yet</option>`:''}${byR[n].sort((a,b)=>gl(a).localeCompare(gl(b))).map(g=>`<option value="${g.id}" data-mode="${esc(g.mode||'')}">${esc(n)} · ${esc(gl(g))}${g.start_date?' · starts '+fmtDay(g.start_date):''}</option>`).join('')}</optgroup>`).join('')}`}
 async function saveCall(id){
   const l=S.modal?.lead;if(!l||l.id!==id)return;
   const st=$('#c-st').value,cm=$('#c-cm').value.trim(),mv=$('#c-mv')?.value;
@@ -703,13 +712,14 @@ async function saveCall(id){
   if(ft&&!fd){toast('Pick the day for the follow-up');return}
   const fat=fd&&ft?new Date(fd+'T'+ft):null;
   if(fat&&fat<new Date(Date.now()-5*60000)&&(fat.toISOString()!==l.follow_up_at)){toast('That follow-up time has already passed');return}
-  const patch={name,city,interest_group:$('#c-gr').value||null,follow_up:fd||null,follow_up_at:fat?fat.toISOString():null};
+  const why=st==='Not Interested'?$('#c-why').value:'';if(st==='Not Interested'&&!why){toast('Pick why the client is not interested');$('#c-why').focus();return}
+  const patch={name,city,follow_up:fd||null,follow_up_at:fat?fat.toISOString():null};
   if(st){const qv=$('#c-q').value;patch.status=st;patch.qualified=qv===''?l.qualified:qv==='1';patch.last_call_at=nowISO();patch.calls_count=(l.calls_count||0)+1;
-    if(['Reserved','Not Interested'].includes(st)){patch.follow_up=null;patch.follow_up_at=null}if(st==='Reserved'&&!patch.interest_group)patch.interest_group='reserved';
+    if(['Reserved','Not Interested'].includes(st)){patch.follow_up=null;patch.follow_up_at=null}if(st==='Reserved')patch.interest_group='reserved';patch.lost_reason=st==='Not Interested'?why:null;
     if(resv){patch.course=resv.course;if(resv.group_id)patch.group_id=resv.group_id}}
   const ok=await guard(async()=>{
     await Q(S.sb.from('leads').update(patch).eq('id',id));
-    if(st)await addEvent(id,'call',{status:st,comment:cm,data:{qualified:patch.qualified??null,follow_up:patch.follow_up,follow_up_at:patch.follow_up_at}});
+    if(st)await addEvent(id,'call',{status:st,comment:cm,data:{qualified:patch.qualified??null,reason:why||undefined,follow_up:patch.follow_up,follow_up_at:patch.follow_up_at}});
     if(resv){const code='RES-'+today().replace(/-/g,'')+'-'+String(Math.floor(Math.random()*90000)+10000);
       const price=(S.courses.find(c=>c.name===resv.course)||{}).price??null;const {amount:paid,...rest}=resv;
       const rr=await Q(S.sb.from('reservations').insert({...rest,price,code,lead_id:id,client_name:name,phone:l.phone,agent_id:l.agent_id||S.me.id,created_by:S.me.id}).select('id').single());
@@ -815,24 +825,35 @@ function resView(){
 async function loadGroups(){await loadRef();S.d.groups={rs:await all(()=>S.sb.from('reservations').select('id,group_id,status,client_name,phone,amount,price,lead_id,agent_id').eq('status','Active').order('created_at'))}}
 function groupsView(){
   const D=S.d.groups;const f=S.gf||(S.gf={course:'',all:false});
-  const list=S.groups.filter(g=>(!f.course||g.course===f.course)&&(f.all||g.active)).sort((a,b)=>(a.course||'').localeCompare(b.course||'')||(b.start_date||'').localeCompare(a.start_date||''));
+  const list=S.groups.filter(g=>(!f.course||!g.course||g.course===f.course)&&(f.all||g.active));
   const booked=id=>D?D.rs.filter(r=>r.group_id===id).length:0;
-  const noGroup=D?D.rs.filter(r=>!r.group_id).length:0;
-  return `<div class="card" style="display:flex;flex-direction:column;gap:12px" id="groups"><div class="row"><div><h2>Groups / rounds</h2><div class="hint">The rounds and places clients book into. Add a group here and it shows up right away when an agent saves a reservation.</div></div><div class="sp"></div><button class="btn pri sm" data-act="grp-new">+ New group</button></div>
-  ${noGroup?`<div class="note">${plural(noGroup,'active reservation')} not in a group yet. Open the client and click "Put in a group".</div>`:''}
+  const noGroup=D?D.rs.filter(r=>!r.group_id&&!r.round_name).length:0;
+  const byR={};list.forEach(g=>{const k=locKey(g.name);(byR[k]=byR[k]||[]).push(g)});const names=Object.keys(byR).sort((a,b)=>rnum(b)-rnum(a)||a.localeCompare(b));
+  return `<div class="card" style="display:flex;flex-direction:column;gap:12px" id="groups"><div class="row"><div><h2>Rounds & groups</h2><div class="hint">Each round and the places / times inside it. These are exactly the choices sales sees when saving a reservation, and a booking lands in that round's sheet right away.</div></div><div class="sp"></div>${hasRounds()?'<button class="btn sm" data-act="grp-sync">Bring in groups from the Rounds sheets</button>':''}<button class="btn pri sm" data-act="grp-new">+ New round / group</button></div>
+  ${noGroup?`<div class="note">${plural(noGroup,'active reservation')} not in a round yet. Open the client and click "Put in a group".</div>`:''}
   <div class="row"><select class="inp" id="gf-course" data-ch="gf.course"><option value="">All courses</option>${S.courses.map(c=>`<option ${f.course===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
    <label class="row" style="gap:6px"><input type="checkbox" data-act="gf-all" ${f.all?'checked':''}> Show closed groups too</label></div>
-  <div class="tbl-wrap"><table class="cards"><thead><tr><th>Course</th><th>Group</th><th>Location</th><th>Days & time</th><th>Attendance</th><th>Starts</th><th>Booked</th><th>Status</th><th></th></tr></thead><tbody>
-  ${list.map(g=>{const n=booked(g.id);const full=g.capacity&&n>=g.capacity;return `<tr><td data-l="Course">${esc(g.course)}</td><td data-l="Group"><b>${esc(g.name)}</b></td><td data-l="Location" class="ar" dir="auto">${esc(g.location||'—')}</td><td data-l="Days & time" class="ar" dir="auto">${esc(g.schedule||'—')}</td><td data-l="Attendance">${esc(g.mode||'—')}</td><td data-l="Starts" class="num">${g.start_date?fmtDay(g.start_date):'—'}</td>
-   <td data-l="Booked" class="n">${D?`<span class="pill ${full?'red':n?'green':''}">${n}${g.capacity?' / '+g.capacity:''}</span>`:'<span class="spin"></span>'}</td><td data-l="Status">${g.active?'<span class="pill green">Open</span>':'<span class="pill">Closed</span>'}</td>
-   <td><button class="btn sm" data-act="grp-clients" data-id="${g.id}">Clients</button> <button class="btn sm" data-act="grp-edit" data-id="${g.id}">Edit</button></td></tr>`}).join('')||`<tr><td colspan="9" class="empty">No groups yet. Click "+ New group".</td></tr>`}
-  </tbody></table></div></div>`;
+  ${names.map(n=>{const gs=byR[n].sort((a,b)=>(a.location||'').localeCompare(b.location||'')||(a.schedule||'').localeCompare(b.schedule||''));const tot=gs.reduce((x,g)=>x+booked(g.id),0);
+   return `<div class="rgroup"><div class="row"><h3>${esc(n)}</h3><span class="hint">${plural(gs.length,'group')}${D?' · '+plural(tot,'booking'):''}${gs[0].course?' · '+esc(gs[0].course):' · any course'}</span><div class="sp"></div><button class="btn sm" data-act="grp-new" data-k="${esc(n)}">+ Add group</button></div>
+   <div class="tbl-wrap"><table class="cards"><thead><tr><th>Place</th><th>Days & time</th><th>Attendance</th><th>Starts</th><th>Booked</th><th>Status</th><th></th></tr></thead><tbody>
+   ${gs.map(g=>{const b=booked(g.id);const full=g.capacity&&b>=g.capacity;return `<tr><td data-l="Place" class="ar" dir="auto"><b>${esc(g.location||'—')}</b></td><td data-l="Days & time" class="ar" dir="auto">${esc(g.schedule||'—')}</td><td data-l="Attendance">${esc(g.mode||'—')}</td><td data-l="Starts" class="num">${g.start_date?fmtDay(g.start_date):'—'}</td>
+    <td data-l="Booked" class="n">${D?`<span class="pill ${full?'red':b?'green':''}">${b}${g.capacity?' / '+g.capacity:''}</span>`:'<span class="spin"></span>'}</td><td data-l="Status">${g.active?'<span class="pill green">Open</span>':'<span class="pill">Closed</span>'}</td>
+    <td><button class="btn sm" data-act="grp-clients" data-id="${g.id}">Clients</button> <button class="btn sm" data-act="grp-edit" data-id="${g.id}">Edit</button></td></tr>`}).join('')}</tbody></table></div></div>`}).join('')||'<div class="empty">No rounds yet. Click "+ New round / group".</div>'}
+  </div>`;
 }
-function groupModal(id){
-  const g=id?S.groups.find(x=>x.id===+id):{active:true,mode:'Offline',course:S.gf&&S.gf.course||''};S.modal={type:'grp',id:id?+id:null};
+/* create a Settings group for every place / time found in the Rounds sheets (skips ones that already exist) */
+async function syncGroupsFromRounds(){
+  const rounds=await Q(S.sb.from('rounds').select('*'));const have=new Set(S.groups.map(g=>locKey(g.name)+'|'+AR(g.location)+'|'+AR(g.schedule)));const add=[];
+  for(const r of rounds){const ents=await all(()=>S.sb.from('round_entries').select('id,location,status,name,phone').eq('round_id',r.id));
+    roundGroups(ents,r.name).tabs.filter(t=>!t.other).forEach(t=>{const w=locKey(t.label).split(' ');let i=w.findIndex(x=>DAYW.includes(AR(x).replace(/^و/,''))||/^[\d٠-٩]/.test(x));if(i<0)i=w.length;
+      const loc=w.slice(0,i).join(' ')||t.place,sch=w.slice(i).join(' ')||null;const k=locKey(r.name)+'|'+AR(loc)+'|'+AR(sch);if(have.has(k))return;have.add(k);
+      add.push({course:r.course||null,name:locKey(r.name),location:loc,schedule:sch,mode:/اونلاين|online/i.test(AR(loc))?'Online':'Offline',active:r.status!=='Closed'})})}
+  if(add.length)await Q(S.sb.from('groups').insert(add));return add.length}
+function groupModal(id,roundName){
+  const g=id?S.groups.find(x=>x.id===+id):{active:true,mode:'Offline',course:S.gf&&S.gf.course||'',name:roundName||''};if(!id&&roundName){const o=S.groups.find(x=>locKey(x.name)===roundName);if(o)g.course=o.course}S.modal={type:'grp',id:id?+id:null};
   openModal(`${mhead(id?'Edit group':'New group')}<div class="mb">
-   <div class="row"><div class="field"><label for="g-course">Course <i>*</i></label><select class="inp" id="g-course">${S.courses.map(c=>`<option ${g.course===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
-    <div class="field"><label for="g-name">Group name <i>*</i></label><input class="inp" id="g-name" value="${esc(g.name||'')}" placeholder="Round 41" autofocus></div></div>
+   <div class="row"><div class="field"><label for="g-course">Course</label><select class="inp" id="g-course"><option value="">Any course</option>${S.courses.map(c=>`<option ${g.course===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+    <div class="field"><label for="g-name">Round <i>*</i></label><input class="inp" id="g-name" value="${esc(g.name||'')}" placeholder="Round 41" autofocus></div></div>
    <div class="row"><div class="field"><label for="g-loc">Location</label><input class="inp ar" dir="auto" id="g-loc" value="${esc(g.location||'')}" placeholder="مدينة نصر / التجمع / Online"></div>
     <div class="field"><label for="g-sch">Days & time</label><input class="inp ar" dir="auto" id="g-sch" value="${esc(g.schedule||'')}" placeholder="الجمعة الساعة 5"></div></div>
    <div class="row"><div class="field"><label for="g-mode">Attendance</label><select class="inp" id="g-mode"><option ${g.mode==='Offline'?'selected':''}>Offline</option><option ${g.mode==='Online'?'selected':''}>Online</option></select></div>
@@ -842,8 +863,8 @@ function groupModal(id){
   </div><div class="mf"><button class="btn pri" data-act="grp-save">${id?'Save':'Add group'}</button><button class="btn" data-act="close">Cancel</button></div>`);
 }
 async function saveGroup(){
-  const m=S.modal;const v={course:$('#g-course').value,name:$('#g-name').value.trim(),location:$('#g-loc').value.trim()||null,schedule:$('#g-sch').value.trim()||null,mode:$('#g-mode').value,start_date:$('#g-start').value||null,capacity:$('#g-cap').value===''?null:+$('#g-cap').value,active:$('#g-active').checked};
-  if(!v.course||!v.name){toast('Pick the course and write the group name');return}
+  const m=S.modal;const v={course:$('#g-course').value||null,name:$('#g-name').value.trim(),location:$('#g-loc').value.trim()||null,schedule:$('#g-sch').value.trim()||null,mode:$('#g-mode').value,start_date:$('#g-start').value||null,capacity:$('#g-cap').value===''?null:+$('#g-cap').value,active:$('#g-active').checked};
+  if(!v.name){toast('Write the round name, for example Round 43');return}
   if(await guard(()=>m.id?Q(S.sb.from('groups').update(v).eq('id',m.id)):Q(S.sb.from('groups').insert(v)),m.id?'Group saved ✓':'Group added ✓')){closeModal();loadView()}
 }
 function groupClientsModal(id){
@@ -1529,7 +1550,7 @@ document.addEventListener('change',async e=>{
   if(el.dataset.actCh==='c-st'){const v=el.value;const q=QUAL_DEFAULT[v];$('#c-q').value=q===true?'1':q===false?'0':'';
     const fu=$('#c-fu');if(v==='Call Later'){if(!fu.value)fu.value=today();$('#c-fu-h').innerHTML='<b>When did the client ask you to call back?</b> Set the time, and the system reminds you then.';$('#c-fut').focus()}
     else if(['No Answer','Not Available','Send Details WP','Possible Lead'].includes(v)&&!fu.value)fu.value=addDays(today(),1);
-    if(['Reserved','Not Interested'].includes(v))fu.value='';if(v==='Reserved'&&!$('#c-gr').value)$('#c-gr').value='reserved';
+    if(['Reserved','Not Interested'].includes(v))fu.value='';$('#why-box').style.display=v==='Not Interested'?'':'none';
     $('#res-box').style.display=v==='Reserved'?'block':'none';return}
   if(el.dataset.actCh==='lg-type'){$('#lg-ded').value=el.selectedOptions[0].dataset.ded||0;return}
   if(el.dataset.actCh==='py-meth'){const l=$('#py-phone-l');if(l)l.innerHTML=el.value==='Bank transfer'?'Account / IBAN number <i>*</i>':el.value==='Cash'?'Phone number (optional)':el.value==='InstaPay'?'InstaPay number or address <i>*</i>':'Wallet number <i>*</i>';return}
@@ -1599,7 +1620,8 @@ document.addEventListener('click',async e=>{
   else if(act==='imp-skip'){impState().skipDup=a.checked;render()}
   else if(act==='do-import')doImport();
   // reservations
-  else if(act==='grp-new')groupModal(null);
+  else if(act==='grp-new')groupModal(null,a.dataset.k||'');
+  else if(act==='grp-sync'){a.disabled=true;const n=await guard(()=>syncGroupsFromRounds());a.disabled=false;if(n!==false){toast(n===true||!n?'Everything is already here ✓':plural(n,'group')+' added ✓');loadView()}}
   else if(act==='grp-edit')groupModal(id);
   else if(act==='grp-save'){a.disabled=true;await saveGroup();a.disabled=false}
   else if(act==='grp-clients')groupClientsModal(id);
