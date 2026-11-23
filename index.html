@@ -243,8 +243,9 @@ const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent',ops:'Rounds (Operation
 const RESULTS={passed:{t:'Passed',c:'green'},again:{t:'Come back again',c:'amber'},noshow:{t:'No-show',c:''},failed:{t:'Not a fit',c:'red'}};
 const ISTATUS={pending:{t:'Under review',c:'amber'},accepted:{t:'Accepted',c:'green'},rejected:{t:'Rejected',c:'red'}};
 const RSTATUS={Active:'green',Cancelled:'red',Refunded:'amber',Completed:'blue'};
-const METHODS=['Cash','InstaPay','Vodafone Cash','Etisalat Cash','Orange Cash','WE Pay','Card','Bank transfer'];
-const REFUND_METHODS=['Vodafone Cash','InstaPay','Etisalat Cash','Orange Cash','WE Pay','Bank transfer','Cash'];
+/* the academy only takes (and refunds) money through these two */
+const METHODS=['Vodafone Cash','InstaPay'];
+const REFUND_METHODS=['Vodafone Cash','InstaPay'];
 const REFUND_TYPES={overpaid:'Paid more than the course price',cancelled:'Cancelled: refund what they paid',other:'Other'};
 const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const PAGE=50;
