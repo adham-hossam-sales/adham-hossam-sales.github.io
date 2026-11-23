@@ -832,7 +832,7 @@ function resView(){
 }
 
 /* ================= groups ================= */
-async function loadGroups(){await loadRef();S.d.groups={rs:await all(()=>S.sb.from('reservations').select('id,group_id,status,client_name,phone,amount,price,lead_id,agent_id').eq('status','Active').order('created_at'))}}
+async function loadGroups(){await loadRef();if(S.view==='config'&&hasRounds())await loadAgentBook();S.d.groups={rs:await all(()=>S.sb.from('reservations').select('id,group_id,status,client_name,phone,amount,price,lead_id,agent_id').eq('status','Active').order('created_at'))}}
 function groupsView(){
   const D=S.d.groups;const f=S.gf||(S.gf={course:'',all:false});
   const list=S.groups.filter(g=>(!f.course||!g.course||g.course===f.course)&&(f.all||g.active));
@@ -1535,6 +1535,76 @@ async function addLog(type,note,ded,to){
 }
 
 /* ================= settings ================= */
+/* ---- Agent bookings by round (Settings) ---- */
+const AD=s=>String(s||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+const ph10=p=>{const d=AD(p).replace(/\D/g,'');return d.length>=9?d.slice(-10):''};
+const cliKey=(phone,name)=>ph10(phone)||('n:'+AR(name).replace(/\s+/g,' ').trim().toLowerCase());
+function abDate(e,r,round){
+  if(r&&r.created_at)return new Date(r.created_at);
+  const s=AD(e.booked_on||'').trim();if(!s)return null;
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return new Date(+m[1],m[2]-1,+m[3]);
+  m=s.match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2,4}))?/);if(!m)return null;
+  const d=+m[1],mo=+m[2];if(!d||!mo||d>31||mo>12)return null;
+  let y=m[3]?(+m[3]<100?2000+ +m[3]:+m[3]):null;
+  if(!y){const ref=new Date(round&&round.created_at||Date.now());y=ref.getFullYear();if(mo-1>ref.getMonth()+1)y--}
+  return new Date(y,mo-1,d)}
+const abFmt=d=>d?d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
+async function loadAgentBook(){
+  if(!hasRounds())return;const A=S.ab||(S.ab={round:null,open:null});
+  const rounds=await Q(S.sb.from('rounds').select('id,name,status,created_at'));
+  rounds.sort((a,b)=>(a.status==='Closed')-(b.status==='Closed')||rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));
+  if(!A.round||!rounds.some(r=>r.id===A.round)){const op=rounds.filter(r=>r.status!=='Closed'&&/^round/i.test(r.name));A.round=(op[0]||rounds[0]||{}).id||null}
+  const [ents,res]=A.round?await Promise.all([all(()=>S.sb.from('round_entries').select('*').eq('round_id',A.round).order('id')),
+    all(()=>S.sb.from('reservations').select('id,code,client_name,phone,agent_id,status,created_at,round_name,group_id').order('created_at'))]):[[],[]];
+  A.d={rounds,ents,res}}
+function agentBook(){
+  const A=S.ab;if(!A||!A.d)return null;const {rounds,ents,res}=A.d;const round=rounds.find(r=>r.id===A.round);if(!round)return null;
+  const rk=locKey(round.name),gName=id=>{const g=S.groups.find(x=>x.id===id);return g?locKey(g.name):''};
+  const resById=Object.fromEntries(res.map(r=>[r.id,r]));const pname=id=>(S.profiles[id]||{}).name||'';
+  const linked=new Set(ents.map(e=>e.reservation_id).filter(Boolean));
+  const roundRes=res.filter(r=>r.status!=='Cancelled'&&(locKey(r.round_name)===rk||(r.group_id&&gName(r.group_id)===rk)));
+  const resByKey={};res.filter(r=>r.status!=='Cancelled').forEach(r=>{const k=cliKey(r.phone,r.client_name);(resByKey[k]=resByKey[k]||[]).push(r)});
+  const rows=ents.filter(e=>e.status!=='Deferred out').map(e=>{const r=e.reservation_id?resById[e.reservation_id]:null;const k=cliKey(e.phone,e.name);
+    const sysAg=r?pname(r.agent_id):'';const m=!r&&(resByKey[k]||[]).find(x=>!linked.has(x.id));
+    return {e,r,k,date:abDate(e,r,round),agent:agentName(e)==='—'&&sysAg?sysAg:agentName(e),src:r?'System':'Sheet',match:m||null,sysAg:r?sysAg:m?pname(m.agent_id):'',flags:[]}});
+  // reservations booked for this round that never reached the sheet
+  roundRes.filter(r=>!linked.has(r.id)&&!rows.some(x=>x.match&&x.match.id===r.id)).forEach(r=>rows.push({e:{name:r.client_name,phone:r.phone,status:r.status==='Active'?'Active':r.status,location:r.group_id?groupName(r.group_id):''},r,k:cliKey(r.phone,r.client_name),date:new Date(r.created_at),agent:pname(r.agent_id)||'—',src:'System only',match:null,sysAg:pname(r.agent_id),flags:['In the system but not in the round sheet']}));
+  const byK={};rows.forEach(x=>(byK[x.k]=byK[x.k]||[]).push(x));
+  rows.forEach(x=>{const same=byK[x.k];if(same.length>1){const others=same.filter(y=>y!==x);x.flags.push('Same client listed '+same.length+'× in this round'+(others.some(y=>AR(y.agent)!==AR(x.agent))?' (by '+[...new Set(same.map(y=>y.agent))].join(' / ')+')':''))}
+    if(x.match)x.flags.push('Same client also booked in the system'+(x.match.code?' ('+x.match.code+')':''));
+    if(x.sysAg&&AR(x.sysAg).replace(/\s/g,'')!==AR(x.agent).replace(/\s/g,'')&&!AR(x.sysAg).includes(AR(x.agent).split(' ')[0]))x.flags.push('Agent differs: sheet says '+x.agent+', system says '+x.sysAg);
+    const sysN=(resByKey[x.k]||[]).length;if(sysN>1)x.flags.push(sysN+' reservations in the system for this phone')});
+  // each client counts once: keep the attending / earliest row as the "counted" one
+  Object.values(byK).forEach(g=>{g.sort((a,b)=>inRound(b.e)-inRound(a.e)||(a.date||9e15)-(b.date||9e15));g.forEach((x,i)=>x.dup=i>0)});
+  const ag={};rows.forEach(x=>{const key=AR(x.agent).replace(/\s+/g,' ').trim().toLowerCase()||'—';const a=ag[key]||(ag[key]={key,names:{},rows:[]});a.names[x.agent]=(a.names[x.agent]||0)+1;a.rows.push(x)});
+  const list=Object.values(ag).map(a=>{a.name=Object.entries(a.names).sort((p,q)=>q[1]-p[1])[0][0];a.rows.sort((p,q)=>(p.date||9e15)-(q.date||9e15));
+    const u=a.rows.filter(x=>!x.dup);a.n=u.length;a.in=u.filter(x=>inRound(x.e)).length;a.out=a.n-a.in;a.sys=u.filter(x=>x.src!=='Sheet').length;a.dups=a.rows.filter(x=>x.dup).length;a.warn=a.rows.filter(x=>x.flags.length).length;
+    const ds=a.rows.map(x=>x.date).filter(Boolean);a.first=ds[0]||null;a.last=ds[ds.length-1]||null;return a}).sort((p,q)=>q.in-p.in||q.n-p.n);
+  return {round,rounds,list,rows}}
+function agentBookView(){
+  if(!hasRounds())return '';const A=S.ab;
+  if(!A||!A.d)return `<div class="card" id="agentbook"><h2>Agent bookings by round</h2><div class="hint">Loading…</div></div>`;
+  const B=agentBook();const rsel=`<select class="inp" data-ch="ab-round" id="ab-round" aria-label="Round" style="max-width:240px">${A.d.rounds.map(r=>`<option value="${r.id}" ${r.id===A.round?'selected':''}>${esc(r.name)}${r.status==='Closed'?' (closed)':''}</option>`).join('')}</select>`;
+  if(!B)return `<div class="card" id="agentbook"><h2>Agent bookings by round</h2>${rsel}</div>`;
+  const T=B.list.reduce((t,a)=>({n:t.n+a.n,in:t.in+a.in,out:t.out+a.out,sys:t.sys+a.sys,dups:t.dups+a.dups,warn:t.warn+a.warn}),{n:0,in:0,out:0,sys:0,dups:0,warn:0});
+  const stp=e=>{const s=RST[e.status];return `<span class="pill" style="background:${s&&s.bg||'#f1f5f9'};border:1px solid ${s&&s.bd||'#cbd5e1'}">${esc(e.status||'')}</span>`};
+  const detail=a=>`<tr class="ab-det"><td colspan="9" style="background:var(--soft,#f8fafc);padding:8px 10px"><div style="overflow-x:auto"><table class="mini"><thead><tr><th>#</th><th>Booked on</th><th>Client</th><th>Mobile</th><th>Group</th><th>Status</th><th>From</th><th>Checks</th></tr></thead><tbody>
+    ${a.rows.map((x,i)=>`<tr style="${x.dup?'opacity:.55':''}"><td class="num">${i+1}</td><td class="num" style="white-space:nowrap">${abFmt(x.date)}${!x.date&&x.e.booked_on?' <span class="hint">('+esc(x.e.booked_on)+')</span>':''}</td><td class="ar" dir="auto">${esc(x.e.name||'')}</td><td class="num" dir="ltr">${esc(x.e.phone||'')}</td><td class="ar" dir="auto">${esc(x.e.location||'')}</td><td>${stp(x.e)}</td><td><span class="pill ${x.src==='Sheet'?'':'blue'}">${x.src}</span></td>
+     <td style="font-size:12px">${x.dup?'<b>Not counted again</b> · ':''}${x.flags.length?x.flags.map(f=>'<span style="color:#b45309">⚠ '+esc(f)+'</span>').join('<br>'):'<span style="color:#16a34a">✓</span>'}</td></tr>`).join('')}</tbody></table></div></td></tr>`;
+  return `<div class="card" style="padding:0" id="agentbook"><div style="padding:16px 16px 8px;display:flex;flex-direction:column;gap:8px">
+   <div class="row"><h2>Agent bookings by round</h2><div class="sp"></div>${rsel}<button class="btn sm" data-act="ab-xls">⬇ Excel</button></div>
+   <div class="hint">Every booking in <b>${esc(B.round.name)}</b>, split by the agent who brought it, with its date. Comes from the round sheet plus reservations saved in the system. A client is matched by mobile number (last 10 digits), so the same person is counted <b>once</b> even if they appear twice or were also saved in the system. Click an agent to see their bookings.</div></div>
+   <div style="overflow-x:auto"><table><thead><tr><th>Agent</th><th class="num">Clients</th><th class="num">Attending</th><th class="num">Not attending</th><th class="num">Saved in system</th><th>First booking</th><th>Last booking</th><th class="num">Repeats removed</th><th class="num">To check</th></tr></thead><tbody>
+   ${B.list.map(a=>`<tr class="click ${A.open===a.key?'on':''}" data-act="ab-open" data-k="${esc(a.key)}"><td class="ar" dir="auto"><b>${A.open===a.key?'▾':'▸'} ${esc(a.name)}</b>${Object.keys(a.names).length>1?' <span class="hint" title="'+esc(Object.keys(a.names).join(' / '))+'">('+Object.keys(a.names).length+' spellings)</span>':''}</td><td class="num"><b>${a.n}</b></td><td class="num">${a.in}</td><td class="num">${a.out||''}</td><td class="num">${a.sys||''}</td><td class="num" style="white-space:nowrap">${abFmt(a.first)}</td><td class="num" style="white-space:nowrap">${abFmt(a.last)}</td><td class="num">${a.dups||''}</td><td class="num">${a.warn?'<span style="color:#b45309">⚠ '+a.warn+'</span>':''}</td></tr>${A.open===a.key?detail(a):''}`).join('')}
+   <tr class="tot"><td><b>All agents · ${B.list.length}</b></td><td class="num"><b>${T.n}</b></td><td class="num"><b>${T.in}</b></td><td class="num">${T.out||''}</td><td class="num">${T.sys||''}</td><td></td><td></td><td class="num">${T.dups||''}</td><td class="num">${T.warn||''}</td></tr>
+   </tbody></table></div></div>`}
+function agentBookXls(){
+  const B=agentBook();if(!B)return;const wb=XLSX.utils.book_new();const used=new Set();const nm=s=>{let n=String(s).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31).trim()||'Sheet';let k=n,i=2;while(used.has(k)){k=n.slice(0,28)+' '+i++}used.add(k);return k};
+  const sh=rows=>{const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{}]);if(rows.length){const ks=Object.keys(rows[0]);ws['!cols']=ks.map(k=>({wch:Math.min(50,Math.max(k.length+2,...rows.map(x=>String(x[k]??'').length+2)))}))}return ws};
+  const d=x=>x?x.toLocaleDateString('en-GB'):'';
+  XLSX.utils.book_append_sheet(wb,sh(B.list.map(a=>({'Agent':a.name,'Clients':a.n,'Attending':a.in,'Not attending':a.out,'Saved in system':a.sys,'First booking':d(a.first),'Last booking':d(a.last),'Repeats removed':a.dups,'To check':a.warn}))),'Summary');
+  B.list.forEach(a=>XLSX.utils.book_append_sheet(wb,sh(a.rows.map((x,i)=>({'#':i+1,'Booked on':d(x.date)||x.e.booked_on||'','Client':x.e.name||'','Mobile':x.e.phone||'','Group':x.e.location||'','Status':x.e.status||'','From':x.src,'Counted':x.dup?'No (repeat)':'Yes','Checks':x.flags.join(' | ')}))),nm(a.name)));
+  XLSX.writeFile(wb,'agent-bookings-'+B.round.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓')}
 function settingsView(){
   const bd=brand();
   return `<div class="head"><div><h1>Settings</h1></div></div>
@@ -1549,6 +1619,7 @@ function settingsView(){
    ${S.courses.map(c=>`<tr data-sv><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.price??'')}" style="width:120px"></td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm pri" data-act="course-save" data-id="${c.id}">Save</button> <span class="pill amber sv-flag">Not saved</span></td></tr>`).join('')}
    </tbody></table></div></div>
 ${groupsView()}
+${agentBookView()}
   <div class="card" data-sv><h2>Channels</h2><div class="hint" style="margin-bottom:8px">Where leads come from (Instagram, Facebook, TikTok…). One per line. Changes only apply after you click Save.</div><textarea class="inp" id="set-platforms" rows="6">${esc(platforms().join('\n'))}</textarea>${svBtn('platforms','Save channels')}</div>
   ${offView()}
   <div class="card" style="padding:0" data-sv><div style="padding:16px 16px 8px" class="row"><h2>Leave & violation types</h2><div class="sp"></div><button class="btn sm" data-act="lt-new">+ Add type</button></div>
@@ -1613,6 +1684,7 @@ document.addEventListener('change',async e=>{
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
   else if(k==='rd-st'){S.rd.st=el.value;render()}
   else if(k==='rd-ag'){S.rd.ag=el.value;render()}
+  else if(k==='ab-round'){S.ab.round=+el.value;S.ab.open=null;await loadAgentBook();render()}
   else if(k==='rd-loc'){let v=el.value;if(v==='__other'){v=(prompt('Group (place, day, time)')||'').trim();if(!v){el.value='';return}}if(v)await guard(()=>setEntryLoc(+el.dataset.id,v))}
   else if(k==='mr-date'){S.rf.mdate=el.value;loadView()}
   else if(k==='mr-d'){mrRefresh()}
@@ -1665,6 +1737,8 @@ document.addEventListener('click',async e=>{
   else if(act==='imp-skip'){impState().skipDup=a.checked;render()}
   else if(act==='do-import')doImport();
   // reservations
+  else if(act==='ab-open'){S.ab.open=S.ab.open===a.dataset.k?null:a.dataset.k;render()}
+  else if(act==='ab-xls')agentBookXls();
   else if(act==='grp-round'){const r=(await Q(S.sb.from('rounds').select('id,name'))).find(x=>locKey(x.name)===a.dataset.k);if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:'',att:'in',ag:''};if(r){S.rd.round=r.id;S.rd.tab='all'}location.hash='rounds';return}
   else if(act==='grp-new')groupModal(null,a.dataset.k||'');
   else if(act==='grp-sync'){a.disabled=true;const n=await guard(()=>syncGroupsFromRounds());a.disabled=false;if(n!==false){toast(n===true||!n?'Everything is already here ✓':plural(n,'group')+' added ✓');loadView()}}
