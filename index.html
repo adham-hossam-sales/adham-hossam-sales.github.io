@@ -419,11 +419,11 @@ function view(){
   if(!S.me)return authView();
   const me=S.me;
   const navs=me.role==='ops'?[['rounds','Rounds']]:me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
-    me.role==='tl'?[['dashboard','Dashboard'],['leads','Team Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions']]:
-    [['dashboard','Dashboard'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['rounds','Rounds'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
+    me.role==='tl'?[['dashboard','Dashboard'],['insights','Insights'],['leads','Team Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions']]:
+    [['dashboard','Dashboard'],['insights','Insights'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['rounds','Rounds'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
   if(me.role!=='admin'&&me.role!=='ops'&&me.rounds_access)navs.push(['rounds','Rounds']);
   if(!navs.find(n=>n[0]===S.view))S.view=navs[0][0];
-  const showPeriod=['dashboard','leads','reservations'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
+  const showPeriod=['dashboard','leads','reservations','insights'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
   <aside class="rail" id="rail"><div class="brand"><img src="${esc(logoSrc())}" alt=""><div><b>${esc(brand().name)}</b><span>${esc(brand().sub)}</span></div></div>
    <nav class="nav">${navs.map(([k,t])=>`<a href="#${k}" class="${S.view===k?'on':''}">${t}${k==='leads'&&S.rem&&S.rem.n?` <span class="nbadge" title="Call-backs / follow-ups due now">${S.rem.n}</span>`:''}</a>`).join('')}</nav>
@@ -432,7 +432,7 @@ function view(){
    <div class="top"><button class="btn sm menu-btn" data-act="menu" aria-label="Menu">☰</button>
     ${showPeriod?`<select class="inp" id="period" data-ch="period" aria-label="Period">${PERIODS.map(([k,t])=>`<option value="${k}" ${S.period===k?'selected':''}>${t}</option>`).join('')}</select>`:''}
     <div class="sp"></div>${S.loading?'<span class="spin" aria-label="Loading"></span>':''}<button class="btn sm" data-act="refresh">Refresh</button></div>
-   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView}[S.view]||dashView)()}</div>
+   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView,insights:insightsView}[S.view]||dashView)()}</div>
   </div></div>`;
 }
 /* ===== reminders: the agent's own follow-ups / call-backs whose time has come ===== */
@@ -468,8 +468,8 @@ function authView(){
   </div></div>`;
 }
 async function loadView(){
-  if(!S.me)return;if(S.me.role==='ops')S.view='rounds';if(S.view==='rounds'&&!hasRounds())S.view='dashboard';S.loading=true;render();
-  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam,rounds:loadRounds}[S.view];if(fn)await fn()}
+  if(!S.me)return;if(S.me.role==='ops')S.view='rounds';if(S.view==='rounds'&&!hasRounds())S.view='dashboard';if(S.view==='insights'&&!isMgr())S.view='dashboard';S.loading=true;render();
+  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam,rounds:loadRounds,insights:loadInsights}[S.view];if(fn)await fn()}
   catch(e){console.error(e);toast(errMsg(e))}
   S.loading=false;render();
 }
@@ -583,6 +583,84 @@ async function ncSave(){
   const ok=await guard(async()=>{const l=await Q(S.sb.from('leads').insert({name,phone,city,course,platform,status:'New',agent_id:agent,assigned_at:nowISO(),created_by:S.me.id}).select('id').single());
     await Q(S.sb.from('lead_events').insert({lead_id:l.id,type:'created',by:S.me.id,comment:note||null,data:{platform,course,agent_id:agent,manual:true}}))},'Client added ✓');
   if(ok){closeModal();loadView()}}
+/* ---- Round change log ---- */
+const LOG_F={status:'Status',location:'Place',group_id:'Group',name:'Name',phone:'Mobile',agent:'Agent',deposit:'Paid',plan:'Plan',notes:'Notes',booked_on:'Booked on',received_on:'Paid to',email:'Email',round:'Round',source:'Source'};
+function logVal(f,v){if(v==null||v==='')return '—';if(f==='group_id')return groupName(v)||('#'+v);return String(v).length>60?String(v).slice(0,60)+'…':String(v)}
+function logText(l){const c=l.changes||{};
+  if(l.action==='added')return `Added${c.status&&c.status[1]?' as <b>'+esc(c.status[1])+'</b>':''}${c.location&&c.location[1]?' · '+esc(c.location[1]):''}${c.source&&c.source[1]==='system'?' · from a reservation':''}`;
+  if(l.action==='removed')return 'Removed from the round';
+  return Object.entries(c).map(([f,[o,n]])=>`${esc(LOG_F[f]||f)}: <span style="color:var(--muted)">${esc(logVal(f,o))}</span> → <b>${esc(logVal(f,n))}</b>`).join('<br>')}
+async function roundLogModal(){const r=(S.d.rounds.rounds||[]).find(x=>x.id===S.rd.round);if(!r)return;
+  openModal(`${mhead('Changes · '+esc(r.name))}<div class="mb"><div class="empty"><span class="spin"></span></div></div>`,true);
+  let L;try{L=await Q(S.sb.from('round_entry_log').select('*').eq('round_id',r.id).order('at',{ascending:false}).limit(500))}catch(e){toast(errMsg(e));closeModal();return}
+  S.modal={type:'rlog',L};renderRoundLog()}
+function renderRoundLog(){const m=S.modal;if(!m||m.type!=='rlog')return;const q=AR(m.q||'').toLowerCase();
+  const L=m.L.filter(l=>!q||AR([l.person,l.phone,l.by_name,JSON.stringify(l.changes)].join(' ')).toLowerCase().includes(q));
+  const body=$('#modal-root .mb');if(!body)return;
+  body.innerHTML=`<div class="row"><input class="inp" id="rl-q" placeholder="Search by student, number or who made the change…" value="${esc(m.q||'')}" style="flex:1"></div>
+   <div class="hint">Every add, edit, move and removal in this round, newest first (last 500). Changes made before this log was switched on are not listed.</div>
+   ${L.length?`<div style="overflow:auto;max-height:60vh"><table><thead><tr><th>When</th><th>Who</th><th>Student</th><th>What changed</th></tr></thead><tbody>
+   ${L.map(l=>`<tr><td class="num" style="white-space:nowrap">${esc(fmtDay(dayOf(l.at)))} ${esc(fmtTime(l.at))}</td><td>${esc(l.by_name||'System')}</td><td class="ar" dir="auto">${esc(l.person||'')}<div class="hint" dir="ltr">${esc(l.phone||'')}</div></td><td style="font-size:13px">${logText(l)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No changes recorded yet.</div>'}`;
+  const i=$('#rl-q');if(i&&m.focus){i.focus();i.setSelectionRange(i.value.length,i.value.length)}}
+
+/* ---- Backups (admin) ---- */
+async function loadBackups(){if(!isAdmin())return;try{const b=await all(()=>S.sb.from('backup_snapshots').select('day,tbl,rows,created_at').order('day',{ascending:false}));const by={};b.forEach(x=>{const d=by[x.day]||(by[x.day]={day:x.day,tables:0,rows:0,at:x.created_at});d.tables++;d.rows+=x.rows;if(x.created_at>d.at)d.at=x.created_at});S.d.backups=Object.values(by)}catch(e){S.d.backups=null}}
+function backupsView(){if(!isAdmin())return '';const B=S.d.backups;
+  return `<div class="card" id="backups"><div class="row"><h2>Backups</h2><div class="sp"></div><button class="btn sm" data-act="bk-now">Back up now</button></div>
+  <div class="hint">A full copy of every table is saved automatically every night at 3 AM and kept for 30 days. Download any day as an Excel file (one sheet per table).</div>
+  ${B==null?'<div class="hint">Backups are not available yet.</div>':B.length?`<table><thead><tr><th>Day</th><th class="num">Tables</th><th class="num">Rows</th><th>Saved at</th><th></th></tr></thead><tbody>
+  ${B.map(d=>`<tr><td>${esc(fmtDay(d.day))}</td><td class="num">${d.tables}</td><td class="num">${d.rows.toLocaleString()}</td><td class="num">${esc(fmtTime(d.at))}</td><td><button class="btn sm" data-act="bk-xls" data-d="${d.day}">⬇ Excel</button></td></tr>`).join('')}</tbody></table>`:'<div class="hint">No backup yet — the first one runs tonight, or press “Back up now”.</div>'}</div>`}
+async function backupXls(day){toast('Preparing the backup file…');
+  const rows=await all(()=>S.sb.from('backup_snapshots').select('tbl,rows,data').eq('day',day).order('tbl'));const wb=XLSX.utils.book_new();
+  rows.forEach(t=>{const data=(t.data||[]).map(r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[k,v!==null&&typeof v==='object'?JSON.stringify(v):v])));
+    const ws=XLSX.utils.json_to_sheet(data.length?data:[{empty:''}]);XLSX.utils.book_append_sheet(wb,ws,t.tbl.slice(0,31))});
+  XLSX.writeFile(wb,'sales-backup-'+day+'.xlsx');toast('Backup downloaded ✓')}
+
+/* ---- Insights ---- */
+async function loadInsights(){const [from,to]=periodRange();const I=S.ins||(S.ins={by:'agent',open:null});
+  const [leads,res,ents]=await Promise.all([
+    all(()=>S.sb.from('leads').select('id,agent_id,platform,course,created_at').gte('created_at',startISO(from)).lt('created_at',endISO(to))),
+    all(()=>S.sb.from('reservations').select('id,lead_id,agent_id,status,course').neq('status','Cancelled')),
+    hasRounds()?all(()=>S.sb.from('round_entries').select('id,round_id,reservation_id,status,deposit,location,group_id,notes')):Promise.resolve([])]);
+  const rounds=hasRounds()?await Q(S.sb.from('rounds').select('id,name,status,region')):[];
+  S.d.insights={leads,res,ents,rounds}}
+function insightsView(){const D=S.d.insights;if(!D)return '<div class="empty"><span class="spin"></span></div>';const I=S.ins;
+  const pct=(a,b)=>b?Math.round(a*100/b)+'%':'—';const money=n=>Math.round(n||0).toLocaleString()+' EGP';
+  /* conversion */
+  const resByLead={};D.res.forEach(r=>{if(r.lead_id)resByLead[r.lead_id]=r});const entByRes={};D.ents.forEach(e=>{if(e.reservation_id)entByRes[e.reservation_id]=e});
+  const keyOf=l=>I.by==='agent'?((S.profiles[l.agent_id]||{}).name||'Unassigned'):I.by==='channel'?(l.platform||'—'):(l.course||'—');
+  const G={};D.leads.forEach(l=>{const k=keyOf(l);const g=G[k]||(G[k]={k,leads:0,res:0,att:0});g.leads++;const r=resByLead[l.id];if(r&&r.status!=='Refunded'){g.res++;const e=entByRes[r.id];if(e&&inRound(e))g.att++}});
+  const rows=Object.values(G).sort((a,b)=>b.res-a.res||b.leads-a.leads);const T=rows.reduce((t,g)=>({leads:t.leads+g.leads,res:t.res+g.res,att:t.att+g.att}),{leads:0,res:0,att:0});
+  const conv=`<div class="card" style="padding:0"><div style="padding:16px 16px 8px"><div class="row"><h2>Conversion · ${esc(periodName())}</h2><div class="sp"></div>
+   <div class="seg">${[['agent','By agent'],['channel','By channel'],['course','By course']].map(([k,t])=>`<button data-act="ins-by" data-k="${k}" class="${I.by===k?'on':''}">${t}</button>`).join('')}</div></div>
+   <div class="hint">Leads that came in during the period → how many booked → how many are attending a round now. Bookings that only exist in the rounds sheets (no lead in the system) are not counted here.</div></div>
+   ${rows.length?`<div style="overflow-x:auto"><table><thead><tr><th>${I.by==='agent'?'Agent':I.by==='channel'?'Channel':'Course'}</th><th class="num">Leads</th><th class="num">Booked</th><th class="num">Lead → booked</th><th class="num">Attending</th><th class="num">Booked → attending</th><th class="num">Lead → attending</th></tr></thead><tbody>
+   ${rows.map(g=>`<tr><td class="ar" dir="auto">${esc(g.k)}</td><td class="num">${g.leads}</td><td class="num">${g.res}</td><td class="num"><b>${pct(g.res,g.leads)}</b></td><td class="num">${g.att}</td><td class="num">${pct(g.att,g.res)}</td><td class="num"><b>${pct(g.att,g.leads)}</b></td></tr>`).join('')}
+   <tr class="tot"><td><b>Total</b></td><td class="num"><b>${T.leads}</b></td><td class="num"><b>${T.res}</b></td><td class="num"><b>${pct(T.res,T.leads)}</b></td><td class="num"><b>${T.att}</b></td><td class="num"><b>${pct(T.att,T.res)}</b></td><td class="num"><b>${pct(T.att,T.leads)}</b></td></tr></tbody></table></div>`:'<div class="empty">No leads came in during this period.</div>'}</div>`;
+  if(!hasRounds())return `<div class="head"><div><h1>Insights</h1></div></div>${conv}`;
+  /* rounds: money + deferral / withdrawal */
+  const rs=D.rounds.slice().sort((a,b)=>(rnum(b.name)||0)-(rnum(a.name)||0)||a.name.localeCompare(b.name));
+  const stat=es=>{const n=es.length,c=s=>es.filter(e=>e.status===s).length;const dep=f=>es.filter(f).reduce((t,e)=>t+(+e.deposit||0),0);
+    return {n,att:es.filter(inRound).length,dout:c('Deferred out'),wd:c('Withdrawn'),ref:c('Refunded'),later:c('Later start'),din:c('Deferred in'),
+      paidAtt:dep(inRound),paidOut:dep(e=>!inRound(e)&&e.status!=='Refunded'),paidRef:dep(e=>e.status==='Refunded')}};
+  /* people who deferred out of a round now live in the later round; find them by the note "تأجيل من راوند N" */
+  const rById=Object.fromEntries(rs.map(r=>[r.id,r]));
+  const movedFrom=r=>{const n=rnum(r.name);if(!n)return [];const pats=['من راوند '+AR_DIG(n),'من راوند '+n,'من لراوند '+AR_DIG(n),'من round '+n,'تاجيل من راوند '+AR_DIG(n)].map(x=>AR(x).toLowerCase());
+    return D.ents.filter(e=>{if(e.round_id===r.id||!e.notes)return false;const o=rById[e.round_id];if(o&&rnum(o.name)&&rnum(o.name)<=n)return false;const t=AR(e.notes).toLowerCase();return pats.some(p=>t.includes(p))})};
+  const R=rs.map(r=>{const es=D.ents.filter(e=>e.round_id===r.id);const s=stat(es);const mv=movedFrom(r).length;s.n+=mv;s.dout+=mv;s.moved=mv;return {r,es,s}}).filter(x=>x.s.n);
+  const moneyCard=`<div class="card" style="padding:0"><div style="padding:16px 16px 8px"><h2>Money recorded per round</h2>
+   <div class="hint">Sum of the “paid” column for each student (the deposit or first payment written in the sheet, or the amount saved on the reservation). Installments paid later are not tracked yet.</div></div>
+   <div style="overflow-x:auto"><table><thead><tr><th>Round</th><th class="num">Attending</th><th class="num">Paid by attending</th><th class="num">Paid by not attending</th><th class="num">Total recorded</th></tr></thead><tbody>
+   ${R.map(({r,s})=>`<tr><td>${esc(r.name)}${r.status==='Closed'?' <span class="hint">(closed)</span>':''}</td><td class="num">${s.att}</td><td class="num">${money(s.paidAtt)}</td><td class="num">${money(s.paidOut)}</td><td class="num"><b>${money(s.paidAtt+s.paidOut)}</b></td></tr>`).join('')}
+   </tbody></table></div></div>`;
+  const rateRow=(lbl,s,attrs='')=>`<tr ${attrs}><td class="ar" dir="auto">${lbl}</td><td class="num">${s.n}</td><td class="num">${s.att} <span class="hint">${pct(s.att,s.n)}</span></td><td class="num">${s.dout} <span class="hint">${pct(s.dout,s.n)}</span></td><td class="num">${s.wd} <span class="hint">${pct(s.wd,s.n)}</span></td><td class="num">${s.ref||''}</td><td class="num">${s.later||''}</td></tr>`;
+  const rates=`<div class="card" style="padding:0"><div style="padding:16px 16px 8px"><h2>Deferrals & withdrawals</h2>
+   <div class="hint">Out of everyone who booked the round. “Deferred” = moved on to a later round (counted from the note “تأجيل من راوند …” on their row in the later round). Click a round to see each place — the place split only covers people still listed in the round.</div></div>
+   <div style="overflow-x:auto"><table><thead><tr><th>Round / place</th><th class="num">People</th><th class="num">Attending</th><th class="num">Deferred</th><th class="num">Withdrawn</th><th class="num">Refunded</th><th class="num">Starts later</th></tr></thead><tbody>
+   ${R.map(({r,es,s})=>{let h=rateRow(`<b>${I.open===r.id?'▾':'▸'} ${esc(r.name)}</b>`,s,`class="click" data-act="ins-open" data-id="${r.id}"`);
+     if(I.open===r.id){const Gp=roundGroups(es,r.name);Gp.tabs.forEach(t=>{h+=rateRow('&nbsp;&nbsp;&nbsp;'+esc(t.label),stat(es.filter(e=>Gp.tabOf(e)===t.key)),'style="background:var(--soft,#f8fafc)"')});if(Gp.none.length)h+=rateRow('&nbsp;&nbsp;&nbsp;'+esc(NONE_LBL),stat(Gp.none),'style="background:var(--soft,#f8fafc)"')}return h}).join('')}
+   </tbody></table></div></div>`;
+  return `<div class="head"><div><h1>Insights</h1><div class="sub">Conversion follows the period at the top; the round tables cover each whole round.</div></div></div>${conv}${moneyCard}${rates}`}
 function leadsView(){
   const D=S.d.leads;const f=S.f;const mgr=isMgr();const t=today();
   const tabs=[['all','All (by period)'],['new','New calls'],['later','⏰ Call later'],['fu','Follow-ups'],['res','Reserved']];
@@ -865,7 +943,7 @@ function resView(){
 }
 
 /* ================= groups ================= */
-async function loadGroups(){await loadRef();if(S.view==='config'&&hasRounds())await loadAgentBook();S.d.groups={rs:await all(()=>S.sb.from('reservations').select('id,group_id,status,client_name,phone,amount,price,lead_id,agent_id').eq('status','Active').order('created_at'))}}
+async function loadGroups(){await loadRef();if(S.view==='config')await loadBackups();if(S.view==='config'&&hasRounds())await loadAgentBook();S.d.groups={rs:await all(()=>S.sb.from('reservations').select('id,group_id,status,client_name,phone,amount,price,lead_id,agent_id').eq('status','Active').order('created_at'))}}
 function groupsView(){
   const D=S.d.groups;const f=S.gf||(S.gf={course:'',all:false});
   const list=S.groups.filter(g=>(!f.course||!g.course||g.course===f.course)&&(f.all||g.active));
@@ -1184,7 +1262,7 @@ function roundSheetView(D){
   
   const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>{const g=S.groups.find(x=>x.id===matchGroup(r.name,l));const st=g?seatOf(g):{};return `<option value="${esc(l)}" ${st.full?'disabled':''}>${esc(l)}${st.full?' · FULL':st.cap?` · ${st.left} left`:''}</option>`}).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
   return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · <b>${plural(nIn,'student')} attending</b>${nOut?` · ${nOut} not attending`:''} · ${esc(r.status)}</div></div><div class="sp"></div>
-   <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
+   <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-log">Changes</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
   <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All groups · ${nIn}</button>${noneIn?`<button data-act="rd-tab" data-k="_none" class="tab-warn ${S.rd.tab==='_none'?'on':''}">⚠ ${NONE_LBL} · ${noneIn}</button>`:''}${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto" title="${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)-(t['Later start']||0)} attending of ${t.n}">${esc(t.label)} · ${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)-(t['Later start']||0)}</button>`).join('')}</div>
   ${S.rd.tab==='all'?`<div class="sumtabs"><button class="${S.rd.sum!=='ag'?'on':''}" data-act="rd-sum" data-k="gr">By group</button><button class="${S.rd.sum==='ag'?'on':''}" data-act="rd-sum" data-k="ag">By agent</button></div>${S.rd.sum==='ag'?agSum:summary}`:''}${S.rd.tab==='_none'?`<div class="note">These students are in ${esc(r.name)} but haven't chosen a place / time yet. Pick their group from the list in the Group column, or open the row. When sales puts the reservation in a group, the row moves to its group here by itself.</div>`:''}
   <div class="row"><input class="inp" data-in="rdq" id="rd-q" placeholder="Search name, mobile, email, notes…" value="${esc(S.rd.q)}" style="max-width:320px">
@@ -1420,6 +1498,7 @@ async function roundsClick(act,a,id){
     /* one person = one row: the student moves to the new round with all their details, and leaves this one */
     if(await guard(()=>Q(S.sb.from('round_entries').update({round_id:to,status:'Deferred in',group_id:null,location:null,notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_at:nowISO(),updated_by:S.me.id}).eq('id',e.id)),'Moved to '+tgt.name+' ✓')){closeModal();loadView()}}
   else if(act==='rd-xlsx')exportRoundXlsx();
+  else if(act==='rd-log')roundLogModal();
   else if(act==='rd-import')importModal();
   else if(act==='rd-import-go'){const url=$('#im-url').value.trim(),rn=$('#im-round').value.trim();if(!url||!rn){toast('Add the link and the round');return}
     a.disabled=true;$('#im-prev').innerHTML='<div class="empty"><span class="spin"></span> Reading the sheet…</div>';
@@ -1681,6 +1760,7 @@ function settingsView(){
    </tbody></table></div></div>
 ${groupsView()}
 ${agentBookView()}
+${backupsView()}
   <div class="card" data-sv><h2>Channels</h2><div class="hint" style="margin-bottom:8px">Where leads come from (Instagram, Facebook, TikTok…). One per line. Changes only apply after you click Save.</div><textarea class="inp" id="set-platforms" rows="6">${esc(platforms().join('\n'))}</textarea>${svBtn('platforms','Save channels')}</div>
   ${offView()}
   <div class="card" style="padding:0" data-sv><div style="padding:16px 16px 8px" class="row"><h2>Leave & violation types</h2><div class="sp"></div><button class="btn sm" data-act="lt-new">+ Add type</button></div>
@@ -1715,6 +1795,7 @@ const markDirty=el=>{const c=el&&el.closest&&el.closest('[data-sv]');if(c)c.clas
 const clearDirty=el=>{const c=el&&el.closest&&el.closest('[data-sv]');if(c)c.classList.remove('dirty')};
 document.addEventListener('input',e=>{
   const el=e.target;const k=el.dataset.in;markDirty(el);
+  if(el.id==='rl-q'){S.modal.q=el.value;S.modal.focus=true;renderRoundLog();return}
   if(el.id==='nc-phone'){clearTimeout(NC_T);NC_T=setTimeout(ncCheckDup,400);return}
   if(k==='q'){S.f.q=el.value;S.f.page=0;clearTimeout(qT);qT=setTimeout(loadView,350)}
   else if(k==='brand'){$('#br-pn').textContent=$('#br-name').value;$('#br-ps').textContent=$('#br-sub').value}
@@ -1865,6 +1946,10 @@ document.addEventListener('click',async e=>{
     csvDownload('shifts-deductions-'+S.att.month+'.csv',rows)}
   // settings
   else if(act==='nc-open')newClientModal();
+  else if(act==='ins-by'){S.ins.by=a.dataset.k;render()}
+  else if(act==='ins-open'){const id=+a.dataset.id;S.ins.open=S.ins.open===id?null:id;render()}
+  else if(act==='bk-xls')backupXls(a.dataset.d);
+  else if(act==='bk-now'){if(await guard(()=>S.sb.rpc('take_backup').then(r=>{if(r.error)throw r.error}),'Backup saved ✓')){await loadBackups();render()}}
   else if(act==='nc-save')ncSave();
   else if(act==='course-new'){if(await guard(()=>Q(S.sb.from('courses').insert({name:'New course '+(S.courses.length+1)})),'Course added — rename it and save')){await loadRef();render()}}
   else if(act==='course-save'){const v={name:$('#co-n-'+id).value.trim(),price:$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();clearDirty(a)}}
