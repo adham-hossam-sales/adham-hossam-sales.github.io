@@ -281,8 +281,8 @@ const fuLabel=l=>l.follow_up_at?(dayOf(l.follow_up_at)===today()?'Today ':fmtDay
 const dueOr=()=>`follow_up_at.lte.${new Date().toISOString()},and(follow_up_at.is.null,follow_up.lte.${today()})`;
 /* a small mark next to the client's name: ⏰ for call-backs, a red dot for follow-ups */
 const fuMark=l=>{if(CLOSED_ST.includes(l.status)||!(l.follow_up||l.follow_up_at))return '';const due=fuDue(l),cl=l.status==='Call Later';
-  if(!due&&!cl)return '';const tip=(cl?'Call back ':'Follow-up ')+fuLabel(l)+(due?' — not called yet':'');
-  return `<span class="mark ${due?'due':''}" title="${esc(tip)}">${cl?'⏰ '+esc(l.follow_up_at?fmtTime(l.follow_up_at):'Call later'):'● Follow-up'}</span>`};
+  if(!due&&!cl)return '';const nr=NO_REACH.includes(l.status);const tip=(cl?'Call back ':nr?'Did not answer last time. Call again — ':'Follow-up ')+fuLabel(l)+(due?' — not called yet':'');
+  return `<span class="mark ${due?'due':''}" title="${esc(tip)}">${cl?'⏰ '+esc(l.follow_up_at?fmtTime(l.follow_up_at):'Call later'):nr?'↻ Call again':'● Follow-up'}</span>`};
 const fmtWhen=iso=>{if(!iso)return '—';const d=dayOf(iso),t=today();if(d===t)return 'Today '+fmtTime(iso);if(d===addDays(t,-1))return 'Yesterday '+fmtTime(iso);return fmtDay(d)+' '+fmtTime(iso)};
 const nf=n=>(+n||0).toLocaleString('en-US');
 const egp=n=>'EGP '+nf(Math.round(+n||0));
@@ -1673,6 +1673,7 @@ document.addEventListener('change',async e=>{
   if(el.dataset.actCh==='c-st'){const v=el.value;const q=QUAL_DEFAULT[v];$('#c-q').value=q===true?'1':q===false?'0':'';
     const fu=$('#c-fu');if(v==='Call Later'){if(!fu.value)fu.value=today();$('#c-fu-h').innerHTML='<b>When did the client ask you to call back?</b> Set the time, and the system reminds you then.';$('#c-fut').focus()}
     else if(['No Answer','Not Available','Send Details WP','Possible Lead'].includes(v)&&!fu.value)fu.value=addDays(today(),1);
+    if(NO_REACH.includes(v))$('#c-fu-h').innerHTML='<b>Comes back tomorrow automatically</b> as a “↻ Call again” reminder. Change the day only if you agreed on another one.';
     if(['Reserved','Not Interested'].includes(v))fu.value='';$('#why-box').style.display=v==='Not Interested'?'':'none';
     $('#res-box').style.display=v==='Reserved'?'block':'none';return}
   if(el.dataset.actCh==='lg-type'){$('#lg-ded').value=el.selectedOptions[0].dataset.ded||0;return}
