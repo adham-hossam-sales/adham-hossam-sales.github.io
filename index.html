@@ -1576,11 +1576,13 @@ function agentBook(){
     const sysN=(resByKey[x.k]||[]).length;if(sysN>1)x.flags.push(sysN+' reservations in the system for this phone')});
   // each client counts once: keep the attending / earliest row as the "counted" one
   Object.values(byK).forEach(g=>{g.sort((a,b)=>inRound(b.e)-inRound(a.e)||(a.date||9e15)-(b.date||9e15));g.forEach((x,i)=>x.dup=i>0)});
-  const ag={};rows.forEach(x=>{const key=AR(x.agent).replace(/\s+/g,' ').trim().toLowerCase()||'—';const a=ag[key]||(ag[key]={key,names:{},rows:[]});a.names[x.agent]=(a.names[x.agent]||0)+1;a.rows.push(x)});
+  const F=S.ab.from?parseD(S.ab.from):null,Tt=S.ab.to?parseD(S.ab.to):null;if(Tt)Tt.setHours(23,59,59,999);const rng=!!(F||Tt);
+  const vis=rng?rows.filter(x=>x.date&&(!F||x.date>=F)&&(!Tt||x.date<=Tt)):rows;const undated=rng?rows.filter(x=>!x.date).length:0;
+  const ag={};vis.forEach(x=>{const key=AR(x.agent).replace(/\s+/g,' ').trim().toLowerCase()||'—';const a=ag[key]||(ag[key]={key,names:{},rows:[]});a.names[x.agent]=(a.names[x.agent]||0)+1;a.rows.push(x)});
   const list=Object.values(ag).map(a=>{a.name=Object.entries(a.names).sort((p,q)=>q[1]-p[1])[0][0];a.rows.sort((p,q)=>(p.date||9e15)-(q.date||9e15));
     const u=a.rows.filter(x=>!x.dup);a.n=u.length;a.in=u.filter(x=>inRound(x.e)).length;a.out=a.n-a.in;a.sys=u.filter(x=>x.src!=='Sheet').length;a.dups=a.rows.filter(x=>x.dup).length;a.warn=a.rows.filter(x=>x.flags.length).length;
     const ds=a.rows.map(x=>x.date).filter(Boolean);a.first=ds[0]||null;a.last=ds[ds.length-1]||null;return a}).sort((p,q)=>q.in-p.in||q.n-p.n);
-  return {round,rounds,list,rows}}
+  return {round,rounds,list,rows:vis,all:rows,rng,undated}}
 function agentBookView(){
   if(!hasRounds())return '';const A=S.ab;
   if(!A||!A.d)return `<div class="card" id="agentbook"><h2>Agent bookings by round</h2><div class="hint">Loading…</div></div>`;
@@ -1593,6 +1595,9 @@ function agentBookView(){
      <td style="font-size:12px">${x.dup?'<b>Not counted again</b> · ':''}${x.flags.length?x.flags.map(f=>'<span style="color:#b45309">⚠ '+esc(f)+'</span>').join('<br>'):'<span style="color:#16a34a">✓</span>'}</td></tr>`).join('')}</tbody></table></div></td></tr>`;
   return `<div class="card" style="padding:0" id="agentbook"><div style="padding:16px 16px 8px;display:flex;flex-direction:column;gap:8px">
    <div class="row"><h2>Agent bookings by round</h2><div class="sp"></div>${rsel}<button class="btn sm" data-act="ab-xls">⬇ Excel</button></div>
+   <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end"><div class="field" style="max-width:170px"><label for="ab-from">From</label><input class="inp" type="date" id="ab-from" data-ch="ab-from" value="${esc(A.from||'')}"></div><div class="field" style="max-width:170px"><label for="ab-to">To</label><input class="inp" type="date" id="ab-to" data-ch="ab-to" value="${esc(A.to||'')}"></div>
+    <div class="seg">${[['today','Today'],['yday','Yesterday'],['7','Last 7 days'],['month','This month'],['lmonth','Last month']].map(([k,t])=>`<button data-act="ab-rng" data-k="${k}" class="${A.rk===k?'on':''}">${t}</button>`).join('')}</div>${B.rng?`<button class="btn sm ghost" data-act="ab-rng" data-k="">✕ All dates</button>`:''}</div>
+   ${B.rng?`<div class="hint" style="color:#1d4ed8">Showing only bookings made ${A.from&&A.to?(A.from===A.to?'on <b>'+fmtDay(A.from)+'</b>':'from <b>'+fmtDay(A.from)+'</b> to <b>'+fmtDay(A.to)+'</b>'):A.from?'from <b>'+fmtDay(A.from)+'</b>':'up to <b>'+fmtDay(A.to)+'</b>'}: <b>${B.rows.filter(x=>!x.dup).length}</b> clients.${B.undated?` ${B.undated} booking(s) in this round have no date in the sheet, so they are left out of this range.`:''}</div>`:''}
    <div class="hint">Every booking in <b>${esc(B.round.name)}</b>, split by the agent who brought it, with its date. Comes from the round sheet plus reservations saved in the system. A client is matched by mobile number (last 10 digits), so the same person is counted <b>once</b> even if they appear twice or were also saved in the system. Click an agent to see their bookings.</div></div>
    <div style="overflow-x:auto"><table><thead><tr><th>Agent</th><th class="num">Clients</th><th class="num">Attending</th><th class="num">Not attending</th><th class="num">Saved in system</th><th>First booking</th><th>Last booking</th><th class="num">Repeats removed</th><th class="num">To check</th></tr></thead><tbody>
    ${B.list.map(a=>`<tr class="click ${A.open===a.key?'on':''}" data-act="ab-open" data-k="${esc(a.key)}"><td class="ar" dir="auto"><b>${A.open===a.key?'▾':'▸'} ${esc(a.name)}</b>${Object.keys(a.names).length>1?' <span class="hint" title="'+esc(Object.keys(a.names).join(' / '))+'">('+Object.keys(a.names).length+' spellings)</span>':''}</td><td class="num"><b>${a.n}</b></td><td class="num">${a.in}</td><td class="num">${a.out||''}</td><td class="num">${a.sys||''}</td><td class="num" style="white-space:nowrap">${abFmt(a.first)}</td><td class="num" style="white-space:nowrap">${abFmt(a.last)}</td><td class="num">${a.dups||''}</td><td class="num">${a.warn?'<span style="color:#b45309">⚠ '+a.warn+'</span>':''}</td></tr>${A.open===a.key?detail(a):''}`).join('')}
@@ -1604,7 +1609,7 @@ function agentBookXls(){
   const d=x=>x?x.toLocaleDateString('en-GB'):'';
   XLSX.utils.book_append_sheet(wb,sh(B.list.map(a=>({'Agent':a.name,'Clients':a.n,'Attending':a.in,'Not attending':a.out,'Saved in system':a.sys,'First booking':d(a.first),'Last booking':d(a.last),'Repeats removed':a.dups,'To check':a.warn}))),'Summary');
   B.list.forEach(a=>XLSX.utils.book_append_sheet(wb,sh(a.rows.map((x,i)=>({'#':i+1,'Booked on':d(x.date)||x.e.booked_on||'','Client':x.e.name||'','Mobile':x.e.phone||'','Group':x.e.location||'','Status':x.e.status||'','From':x.src,'Counted':x.dup?'No (repeat)':'Yes','Checks':x.flags.join(' | ')}))),nm(a.name)));
-  XLSX.writeFile(wb,'agent-bookings-'+B.round.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓')}
+  XLSX.writeFile(wb,'agent-bookings-'+B.round.name+(B.rng?'_'+(S.ab.from||'start')+'_to_'+(S.ab.to||today()):'').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓')}
 function settingsView(){
   const bd=brand();
   return `<div class="head"><div><h1>Settings</h1></div></div>
@@ -1685,6 +1690,7 @@ document.addEventListener('change',async e=>{
   else if(k==='rd-st'){S.rd.st=el.value;render()}
   else if(k==='rd-ag'){S.rd.ag=el.value;render()}
   else if(k==='ab-round'){S.ab.round=+el.value;S.ab.open=null;await loadAgentBook();render()}
+  else if(k==='ab-from'||k==='ab-to'){S.ab[k.slice(3)]=el.value;S.ab.rk='';if(S.ab.from&&S.ab.to&&S.ab.from>S.ab.to){const t=S.ab.from;S.ab.from=S.ab.to;S.ab.to=t}render()}
   else if(k==='rd-loc'){let v=el.value;if(v==='__other'){v=(prompt('Group (place, day, time)')||'').trim();if(!v){el.value='';return}}if(v)await guard(()=>setEntryLoc(+el.dataset.id,v))}
   else if(k==='mr-date'){S.rf.mdate=el.value;loadView()}
   else if(k==='mr-d'){mrRefresh()}
@@ -1737,6 +1743,9 @@ document.addEventListener('click',async e=>{
   else if(act==='imp-skip'){impState().skipDup=a.checked;render()}
   else if(act==='do-import')doImport();
   // reservations
+  else if(act==='ab-rng'){const k=a.dataset.k,t=today(),d=new Date();S.ab.rk=k;
+    if(!k){S.ab.from=S.ab.to=''}else if(k==='today'){S.ab.from=S.ab.to=t}else if(k==='yday'){S.ab.from=S.ab.to=addDays(t,-1)}else if(k==='7'){S.ab.from=addDays(t,-6);S.ab.to=t}
+    else if(k==='month'){S.ab.from=dstr(new Date(d.getFullYear(),d.getMonth(),1));S.ab.to=t}else if(k==='lmonth'){S.ab.from=dstr(new Date(d.getFullYear(),d.getMonth()-1,1));S.ab.to=dstr(new Date(d.getFullYear(),d.getMonth(),0))}render()}
   else if(act==='ab-open'){S.ab.open=S.ab.open===a.dataset.k?null:a.dataset.k;render()}
   else if(act==='ab-xls')agentBookXls();
   else if(act==='grp-round'){const r=(await Q(S.sb.from('rounds').select('id,name'))).find(x=>locKey(x.name)===a.dataset.k);if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:'',att:'in',ag:''};if(r){S.rd.round=r.id;S.rd.tab='all'}location.hash='rounds';return}
