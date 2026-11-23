@@ -345,6 +345,7 @@ async function loadRef(){
     Q(S.sb.from('profiles').select('*').order('name')),Q(S.sb.from('settings').select('*')),
     Q(S.sb.from('courses').select('*').order('name')),Q(S.sb.from('groups').select('*').order('start_date',{ascending:false,nullsFirst:false}))]);
   S.profiles=Object.fromEntries(profiles.map(p=>[p.id,p]));setTimeout(applyBrand);S.settings=Object.fromEntries(settings.map(s=>[s.key,s.value]));S.courses=courses;S.groups=groups;await loadSeats();
+  try{S.offers=await Q(S.sb.from('course_offers').select('*').order('starts',{ascending:false}))}catch(e){S.offers=[]}
 }
 const setting=(k,def)=>S.settings[k]!=null?S.settings[k]:def;
 const brand=()=>Object.assign({name:'Sales Department',sub:'Adham Hossam',logo:''},S.brandPub||{},S.settings.brand||{});
@@ -661,6 +662,46 @@ function insightsView(){const D=S.d.insights;if(!D)return '<div class="empty"><s
      if(I.open===r.id){const Gp=roundGroups(es,r.name);Gp.tabs.forEach(t=>{h+=rateRow('&nbsp;&nbsp;&nbsp;'+esc(t.label),stat(es.filter(e=>Gp.tabOf(e)===t.key)),'style="background:var(--soft,#f8fafc)"')});if(Gp.none.length)h+=rateRow('&nbsp;&nbsp;&nbsp;'+esc(NONE_LBL),stat(Gp.none),'style="background:var(--soft,#f8fafc)"')}return h}).join('')}
    </tbody></table></div></div>`;
   return `<div class="head"><div><h1>Insights</h1><div class="sub">Conversion follows the period at the top; the round tables cover each whole round.</div></div></div>${conv}${moneyCard}${rates}`}
+
+/* ---- course prices: cash / installments, with time-limited offers ---- */
+const PLAN_KEY=p=>/قسط|inst/i.test(p||'')?'inst':'cash';
+const basePrice=(c,k)=>{if(!c)return null;const v=k==='inst'?c.inst_price:(c.cash_price??c.price);return v==null||v===''?null:+v};
+function offerFor(course,day){day=day||today();return (S.offers||[]).filter(o=>o.active&&o.course===course&&o.starts<=day&&(!o.ends||o.ends>=day)).sort((a,b)=>b.starts.localeCompare(a.starts))[0]||null}
+function priceFor(course,plan,day){const c=S.courses.find(x=>x.name===course);const k=PLAN_KEY(plan);const base=basePrice(c,k);const o=offerFor(course,day);
+  const op=o?(k==='inst'?o.inst_price:o.cash_price):null;return {price:op!=null&&op!==''?+op:base,base,offer:op!=null&&op!==''?o:null,k}}
+function offerState(o){const t=today();if(!o.active)return ['Stopped',''];if(o.starts>t)return ['Starts '+fmtDay(o.starts),'blue'];if(o.ends&&o.ends<t)return ['Ended','gray'];return ['Running now','green']}
+function priceHint(course,plan){if(!course)return '';const c=priceFor(course,'كاش'),i=priceFor(course,'قسط');const sel=plan?priceFor(course,plan):null;
+  const fmt=x=>x.price!=null?egp(x.price)+(x.offer?` <s style="color:var(--muted)">${x.base!=null?egp(x.base):''}</s>`:''):'—';
+  const o=c.offer||i.offer;
+  return `Cash ${fmt(c)} · Installments ${fmt(i)}${o?` · <b style="color:#15803d">Offer: ${esc(o.title||'Special price')}${o.ends?' until '+esc(fmtDay(o.ends)):''}</b>`:''}${sel&&sel.price!=null?`<br>This booking: <b>${egp(sel.price)}</b> (${sel.k==='inst'?'installments':'cash'})`:''}`}
+function updResPrice(){const h=$('#r-price-h');if(!h)return;const course=$('#r-course').value,plan=$('#r-plan').value;h.innerHTML=priceHint(course,plan);
+  const a=$('#r-amt');if(a){const pf=priceFor(course,plan||'كاش');a.placeholder=pf.price!=null?String(pf.price):''}}
+function offersView(){if(!isAdmin())return '';const O=S.offers||[];
+  return `<div class="card" style="padding:0" id="offers"><div style="padding:16px 16px 8px" class="row"><h2>Offers</h2><div class="sp"></div><button class="btn sm pri" data-act="of-new">+ New offer</button></div>
+  <div class="hint" style="padding:0 16px 8px">A special cash / installments price for a course between two dates. While it runs, new reservations take the offer price automatically; when it ends, the normal price comes back.</div>
+  ${O.length?`<div style="overflow-x:auto"><table><thead><tr><th>Course</th><th>Offer</th><th class="num">Cash</th><th class="num">Installments</th><th>From</th><th>To</th><th>Status</th><th></th></tr></thead><tbody>
+  ${O.map(o=>{const [st,cls]=offerState(o);return `<tr><td>${esc(o.course)}</td><td>${esc(o.title||'—')}</td><td class="num">${o.cash_price!=null?egp(o.cash_price):'—'}</td><td class="num">${o.inst_price!=null?egp(o.inst_price):'—'}</td><td class="num">${esc(fmtDay(o.starts))}</td><td class="num">${o.ends?esc(fmtDay(o.ends)):'Until stopped'}</td><td><span class="pill ${cls}">${st}</span></td>
+   <td style="white-space:nowrap"><button class="btn sm" data-act="of-edit" data-id="${o.id}">Edit</button> <button class="btn sm" data-act="of-toggle" data-id="${o.id}">${o.active?'Stop':'Resume'}</button> <button class="btn sm ghost" data-act="of-del" data-id="${o.id}" aria-label="Delete offer">✕</button></td></tr>`}).join('')}</tbody></table></div>`:'<div class="empty">No offers yet.</div>'}</div>`}
+function offerModal(id){const o=id?(S.offers||[]).find(x=>x.id===id):null;S.modal={type:'offer',id:id||null};
+  openModal(`${mhead(o?'Edit offer':'New offer')}<div class="mb">
+   <div class="row"><div class="field"><label for="of-course">Course <i>*</i></label><select class="inp" id="of-course">${S.courses.filter(c=>c.active||(o&&o.course===c.name)).map(c=>`<option ${o&&o.course===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+    <div class="field"><label for="of-title">Offer name</label><input class="inp" id="of-title" dir="auto" placeholder="e.g. Black Friday" value="${esc(o?o.title||'':'')}"></div></div>
+   <div class="row"><div class="field"><label for="of-cash">Cash price (EGP)</label><input class="inp num" type="number" min="0" id="of-cash" value="${o&&o.cash_price!=null?o.cash_price:''}"></div>
+    <div class="field"><label for="of-inst">Installments price (EGP)</label><input class="inp num" type="number" min="0" id="of-inst" value="${o&&o.inst_price!=null?o.inst_price:''}"></div></div>
+   <div class="hint">Leave one empty to keep the normal price for that plan.</div>
+   <div class="row"><div class="field"><label for="of-from">Starts <i>*</i></label><input class="inp" type="date" id="of-from" value="${o?o.starts:today()}"></div>
+    <div class="field"><label for="of-to">Ends</label><input class="inp" type="date" id="of-to" value="${o&&o.ends?o.ends:''}"><div class="hint">Empty = runs until you stop it.</div></div></div>
+   <div class="field"><label for="of-note">Note</label><input class="inp" id="of-note" dir="auto" value="${esc(o?o.note||'':'')}"></div>
+  </div><div class="mf"><button class="btn ghost" data-act="close">Cancel</button><button class="btn pri" data-act="of-save">Save offer</button></div>`)}
+async function offerSave(){const m=S.modal;const num=id=>{const v=$(id).value;return v===''?null:+v};
+  const v={course:$('#of-course').value,title:$('#of-title').value.trim()||null,cash_price:num('#of-cash'),inst_price:num('#of-inst'),starts:$('#of-from').value,ends:$('#of-to').value||null,note:$('#of-note').value.trim()||null};
+  if(!v.course||!v.starts){toast('Pick the course and the start date');return}
+  if(v.cash_price==null&&v.inst_price==null){toast('Enter at least one offer price');return}
+  if(v.ends&&v.ends<v.starts){toast('The end date is before the start date');return}
+  const clash=(S.offers||[]).find(o=>o.id!==m.id&&o.active&&o.course===v.course&&o.starts<=(v.ends||'9999-12-31')&&(!o.ends||o.ends>=v.starts));
+  if(clash){toast(`Another offer for ${v.course} runs in these dates (${clash.title||'offer'}) — stop it or change the dates`);return}
+  const ok=await guard(()=>m.id?Q(S.sb.from('course_offers').update(v).eq('id',m.id)):Q(S.sb.from('course_offers').insert({...v,active:true,created_by:S.me.id})),'Offer saved ✓');
+  if(ok){closeModal();await loadRef();render()}}
 function leadsView(){
   const D=S.d.leads;const f=S.f;const mgr=isMgr();const t=today();
   const tabs=[['all','All (by period)'],['new','New calls'],['later','⏰ Call later'],['fu','Follow-ups'],['res','Reserved']];
@@ -805,10 +846,10 @@ async function callModal(id){
      <div class="field"><label for="r-amt">Amount paid (EGP) <i>*</i></label><input class="inp num" type="number" min="0" id="r-amt" placeholder="${course&&course.price?course.price:''}"></div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-pay">Payment</label><select class="inp" id="r-pay"><option>Deposit</option><option>Full</option></select></div>
      <div class="field"><label for="r-meth">Method</label><select class="inp" id="r-meth">${METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div></div>
-    <div class="row" style="margin-top:8px"><div class="field"><label for="r-plan">Plan</label><select class="inp" id="r-plan"><option value="">—</option><option value="كاش">Cash (كاش)</option><option value="قسط">Installments (قسط)</option></select></div>
+    <div class="row" style="margin-top:8px"><div class="field"><label for="r-plan">Plan <i>*</i></label><select class="inp" id="r-plan" data-act-ch="r-plan"><option value="">— Cash or installments —</option><option value="كاش">Cash (كاش)</option><option value="قسط">Installments (قسط)</option></select></div>
      <div class="field"><label for="r-to">Paid to (wallet / InstaPay number)</label><input class="inp" id="r-to" placeholder="01080316147 / ادهم"></div></div>
     <div class="field" style="margin-top:8px"><label for="r-email">Client email</label><input class="inp" id="r-email" type="email" placeholder="name@gmail.com"></div>
-    ${course&&course.price?`<div class="hint" style="margin-top:6px">Course price: ${egp(course.price)}</div>`:''}</div>
+    <div class="hint" id="r-price-h" style="margin-top:6px">${priceHint(l.course||courseNames()[0],'')}</div></div>
    ${mgr?`<div class="field"><label for="c-mv">Reassign to another agent</label><select class="inp ar" id="c-mv"><option value="">— Keep with ${esc(pname(l.agent_id))} —</option>${myAgents().filter(a=>a.id!==l.agent_id).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>`:''}
    <details><summary style="cursor:pointer;font-weight:600">History (${F.events.length})</summary><div class="timeline" style="margin-top:8px;max-height:260px;overflow:auto">${F.events.slice().reverse().map(eventLine).join('')}</div></details>
   </div><div class="mf"><button class="btn pri" data-act="save-call" data-id="${l.id}">Save</button><button class="btn" data-act="close">Cancel</button></div>`);
@@ -825,6 +866,7 @@ async function saveCall(id){
   let resv=null;
   if(st==='Reserved'){const amt=$('#r-amt').value;if(amt===''){toast('Enter the amount paid');return}
     if(!$('#r-group').value&&$('#r-group').options.length>1){toast('Pick the round (the place can be chosen later)');$('#r-group').focus();return}
+    if(!$('#r-plan').value){toast('Pick cash or installments');$('#r-plan').focus();return}
     resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,round_name:$('#r-group').value.startsWith('r:')?$('#r-group').value.slice(2):null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value,plan:$('#r-plan').value||null,paid_to:$('#r-to').value.trim()||null,email:$('#r-email').value.trim()||null};}
   const name=$('#c-name').value.trim()||l.name||'Unknown',city=$('#c-city').value||l.city||null;
   const fd=$('#c-fu').value,ft=$('#c-fut').value;
@@ -842,7 +884,7 @@ async function saveCall(id){
     await Q(S.sb.from('leads').update(patch).eq('id',id));
     if(st)await addEvent(id,'call',{status:st,comment:cm,data:{qualified:patch.qualified??null,reason:why||undefined,follow_up:patch.follow_up,follow_up_at:patch.follow_up_at}});
     if(resv){const code='RES-'+today().replace(/-/g,'')+'-'+String(Math.floor(Math.random()*90000)+10000);
-      const price=(S.courses.find(c=>c.name===resv.course)||{}).price??null;const {amount:paid,...rest}=resv;
+      const pf=priceFor(resv.course,resv.plan);const price=pf.price;const {amount:paid,...rest}=resv;rest.offer_id=pf.offer?pf.offer.id:null;
       const rr=await Q(S.sb.from('reservations').insert({...rest,price,code,lead_id:id,client_name:name,phone:l.phone,agent_id:l.agent_id||S.me.id,created_by:S.me.id}).select('id').single());
       if(paid>0)await Q(S.sb.from('reservation_payments').insert({reservation_id:rr.id,kind:'payment',amount:paid,method:resv.method,note:resv.payment,by:S.me.id}));
       await addEvent(id,'reserved',{data:{...resv,code}});if(resv.group_id)await addEvent(id,'group_joined',{data:{group_id:resv.group_id}});}
@@ -1755,9 +1797,10 @@ function settingsView(){
     <div class="row"><label class="btn sm"><input type="file" id="br-logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>Upload a new logo</label><button class="btn sm ghost" data-act="br-default">Use the default logo</button><span class="hint">PNG with a transparent background looks best.</span></div>
     <div class="sv-row"><button class="btn pri" data-act="br-save">Save branding</button><span class="pill amber sv-flag">Not saved yet</span></div></div></div></div>
   <div class="card" style="padding:0"><div style="padding:16px 16px 8px" class="row"><h2>Courses & prices</h2><div class="sp"></div><button class="btn sm" data-act="course-new">+ Add course</button></div>
-   <div style="overflow-x:auto"><table><thead><tr><th>Course</th><th>Price (EGP)</th><th>Active</th><th></th></tr></thead><tbody>
-   ${S.courses.map(c=>`<tr data-sv><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.price??'')}" style="width:120px"></td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm pri" data-act="course-save" data-id="${c.id}">Save</button> <span class="pill amber sv-flag">Not saved</span></td></tr>`).join('')}
+   <div style="overflow-x:auto"><table><thead><tr><th>Course</th><th>Cash price</th><th>Installments price</th><th>Price today</th><th>Active</th><th></th></tr></thead><tbody>
+   ${S.courses.map(c=>`<tr data-sv><td><input class="inp" id="co-n-${c.id}" value="${esc(c.name)}"></td><td><input class="inp num" type="number" min="0" id="co-p-${c.id}" value="${esc(c.cash_price??c.price??'')}" style="width:110px" aria-label="Cash price"></td><td><input class="inp num" type="number" min="0" id="co-i-${c.id}" value="${esc(c.inst_price??'')}" style="width:110px" aria-label="Installments price"></td><td style="font-size:12px">${offerFor(c.name)?`<span class="pill green">Offer</span> ${esc(offerFor(c.name).title||'')}`:'<span class="hint">Normal price</span>'}</td><td><input type="checkbox" id="co-a-${c.id}" ${c.active?'checked':''} aria-label="Active"></td><td><button class="btn sm pri" data-act="course-save" data-id="${c.id}">Save</button> <span class="pill amber sv-flag">Not saved</span></td></tr>`).join('')}
    </tbody></table></div></div>
+${offersView()}
 ${groupsView()}
 ${agentBookView()}
 ${backupsView()}
@@ -1815,7 +1858,8 @@ document.addEventListener('change',async e=>{
   if(el.dataset.actCh==='py-meth'){const l=$('#py-phone-l');if(l)l.innerHTML=el.value==='Bank transfer'?'Account / IBAN number <i>*</i>':el.value==='Cash'?'Phone number (optional)':el.value==='InstaPay'?'InstaPay number or address <i>*</i>':'Wallet number <i>*</i>';return}
   if(el.dataset.actCh==='r-group'){const m=el.selectedOptions[0]&&el.selectedOptions[0].dataset.mode;if(m)$('#r-att').value=m;return}
   if(el.dataset.actCh==='py-reason'){const b=resBalance(S.modal.res);if(el.value==='overpaid'){$('#py-amt').value=b.over||'';$('#py-close').checked=false}else if(el.value==='cancelled'){$('#py-amt').value=b.paid||'';$('#py-close').checked=true}return}
-  if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value,true);return}
+  if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value,true);updResPrice();return}
+  if(el.dataset.actCh==='r-plan'){updResPrice();return}
   if(el.dataset.actCh==='i-lead'){const o=el.selectedOptions[0];if(o&&o.value){$('#i-name').value=o.dataset.n||'';$('#i-phone').value=o.dataset.p||'';$('#i-course').value=o.dataset.c||''}return}
   if(el.id==='br-logo'&&el.files[0]){const f=el.files[0];const img=new Image();img.onload=()=>{const c=document.createElement('canvas');const sc=Math.min(1,256/Math.max(img.width,img.height));c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);c.getContext('2d').drawImage(img,0,0,c.width,c.height);S.brandLogo=c.toDataURL('image/png');$('#br-prev').src=S.brandLogo;URL.revokeObjectURL(img.src)};img.onerror=()=>toast("Couldn't read that image");img.src=URL.createObjectURL(f);return}
   if(el.id==='imp-file'&&el.files[0]){readFile(el.files[0]);return}
@@ -1946,13 +1990,18 @@ document.addEventListener('click',async e=>{
     csvDownload('shifts-deductions-'+S.att.month+'.csv',rows)}
   // settings
   else if(act==='nc-open')newClientModal();
+  else if(act==='of-new')offerModal();
+  else if(act==='of-edit')offerModal(+a.dataset.id);
+  else if(act==='of-save')offerSave();
+  else if(act==='of-toggle'){const o=(S.offers||[]).find(x=>x.id===+a.dataset.id);if(o&&await guard(()=>Q(S.sb.from('course_offers').update({active:!o.active}).eq('id',o.id)),o.active?'Offer stopped':'Offer resumed')){await loadRef();render()}}
+  else if(act==='of-del'){const o=(S.offers||[]).find(x=>x.id===+a.dataset.id);if(o&&confirm('Delete the offer "'+(o.title||o.course)+'"? Reservations already made keep their price.')&&await guard(()=>Q(S.sb.from('course_offers').delete().eq('id',o.id)),'Offer deleted')){await loadRef();render()}}
   else if(act==='ins-by'){S.ins.by=a.dataset.k;render()}
   else if(act==='ins-open'){const id=+a.dataset.id;S.ins.open=S.ins.open===id?null:id;render()}
   else if(act==='bk-xls')backupXls(a.dataset.d);
   else if(act==='bk-now'){if(await guard(()=>S.sb.rpc('take_backup').then(r=>{if(r.error)throw r.error}),'Backup saved ✓')){await loadBackups();render()}}
   else if(act==='nc-save')ncSave();
   else if(act==='course-new'){if(await guard(()=>Q(S.sb.from('courses').insert({name:'New course '+(S.courses.length+1)})),'Course added — rename it and save')){await loadRef();render()}}
-  else if(act==='course-save'){const v={name:$('#co-n-'+id).value.trim(),price:$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();clearDirty(a)}}
+  else if(act==='course-save'){const cp=$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value;const v={name:$('#co-n-'+id).value.trim(),price:cp,cash_price:cp,inst_price:$('#co-i-'+id).value===''?null:+$('#co-i-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();clearDirty(a)}}
   else if(act==='group-new'){if(!S.courses.length){toast('Add a course first');return}if(await guard(()=>Q(S.sb.from('groups').insert({course:S.courses[0].name,name:'Round '})),'Group added — fill it in and save')){await loadRef();render()}}
   else if(act==='group-save'){const v={course:$('#gr-c-'+id).value,name:$('#gr-n-'+id).value.trim(),location:$('#gr-l-'+id).value.trim()||null,start_date:$('#gr-s-'+id).value||null,capacity:$('#gr-k-'+id).value===''?null:+$('#gr-k-'+id).value,active:$('#gr-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('groups').update(v).eq('id',id)),'Saved ✓')){await loadRef();render()}}
   else if(act==='br-default'){S.brandLogo='';$('#br-prev').src=DEFAULT_LOGO}
