@@ -1263,14 +1263,17 @@ async function dedupeDeferred(){const ents=await all(()=>S.sb.from('round_entrie
   return n}
 async function importRows(roundName,region,rows,opts={}){
   const layout=opts.layout||sheetLayout(rows);const r=await ensureRound(roundName,region);
-  const have=await all(()=>S.sb.from('round_entries').select('id,phone,name,location').eq('round_id',r.id));
+  const have=await all(()=>S.sb.from('round_entries').select('id,phone,name,location,booked_on').eq('round_id',r.id));
   const byKey=new Map(have.map(x=>[digits(x.phone)||('n:'+x.name),x]));const out=[];const fill=[];let skip=0;
-  rows.forEach(raw=>{const e=rowToEntry(raw,layout);if(!e)return;const k=digits(e.phone)||('n:'+e.name);const h=byKey.get(k);
-    if(h){skip++;const loc=locKey(e.location)||opts.fillLocation;if(!h.location&&loc&&h.id){h.location=loc;fill.push(h)}return}
+  /* the sheet writes the date only on the first booking of each day: rows under it with no date belong to that same day, until the next date. A blank row (the gap before the withdrawn block) ends the run */
+  let day=null;
+  rows.forEach(raw=>{if(!raw.some(c=>clean(c))){day=null;return}const e=rowToEntry(raw,layout);if(!e)return;if(layout==='std'){if(e.booked_on)day=e.booked_on;else if(day)e.booked_on=day}
+    const k=digits(e.phone)||('n:'+e.name);const h=byKey.get(k);
+    if(h){skip++;const loc=locKey(e.location)||opts.fillLocation;let ch=false;if(!h.location&&loc){h.location=loc;ch=true}if(!h.booked_on&&e.booked_on){h.booked_on=e.booked_on;ch=true}if(ch&&h.id&&!fill.includes(h))fill.push(h);return}
     if(!e.location&&opts.fillLocation)e.location=opts.fillLocation;e.location=e.location?locKey(e.location):null;
     e.status=(opts.statusMap&&opts.statusMap[digits(e.phone)])||guessStatus(e.notes);const row={...e,group_id:matchGroup(r.name,e.location),round_id:r.id,source:'sheet',sort:have.length+out.length+1,updated_by:S.me.id};out.push(row);byKey.set(k,row)});
   for(let i=0;i<out.length;i+=200)await Q(S.sb.from('round_entries').insert(out.slice(i,i+200)));
-  for(const h of fill)await Q(S.sb.from('round_entries').update({location:h.location}).eq('id',h.id));
+  for(const h of fill)await Q(S.sb.from('round_entries').update({location:h.location,booked_on:h.booked_on||null}).eq('id',h.id));
   await dedupeDeferred();
   return {round:r,added:out.length,skipped:skip,layout}}
 function importModal(){
