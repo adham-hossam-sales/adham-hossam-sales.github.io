@@ -183,6 +183,7 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .sheet-wrap{max-height:70vh;overflow:auto}.sheet{font-size:12.5px;min-width:1500px}.sheet th{position:sticky;top:0;z-index:1;background:var(--surface)}
 .sheet td{padding:6px 8px;vertical-align:top}.sheet td.c-notes{min-width:260px;max-width:380px}.sheet td.c-email{font-size:11.5px}.sheet td.c-name{font-weight:600;min-width:150px}
 .sheet td.c-location{min-width:170px}.rst{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.gsum{width:100%;border-collapse:collapse}.gsum th,.gsum td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:start}.gsum td.num,.gsum th.num{text-align:center}.gsum tr.on td{background:var(--accent-soft,#eef2ff)}.gsum tr.tot td{border-top:2px solid var(--line);background:var(--bg)}
 .rlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}.rlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
 .pstats{display:flex;flex-wrap:wrap;gap:8px}.pstats div{background:var(--bg);border-radius:10px;padding:8px 12px;min-width:92px}.pstats b{display:block;font-size:18px}.pstats span{font-size:12px;color:var(--muted)}
 .cal td.nm a{color:inherit;text-decoration:underline dotted;cursor:pointer}
@@ -1000,6 +1001,29 @@ const RCOLS=[['booked_on','Booked'],['ref','Code'],['name','Name'],['phone','Mob
 const rnum=n=>{const m=String(n||'').match(/\d+/);return m?+m[0]:0};
 const digits=s=>String(s||'').replace(/\D/g,'').slice(-10);
 const locKey=s=>String(s||'').replace(/\s+/g,' ').trim();
+/* --- groups by place: "التجمع" and "التجمع الثلاثاء الساعة ٥" are one group, unless the round really has two times there --- */
+const AR=s=>String(s||'').replace(/[ً-ٰٟـ‎‏‪-‮]/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه')
+  .replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/\s+/g,' ').trim();
+const DAYW=['السبت','الاحد','الاثنين','الاتنين','الثلاثاء','التلات','الثلاث','الاربعاء','الاربع','الخميس','الجمعه','يوم','سبت','احد','اثنين','ثلاثاء','اربعاء','خميس','جمعه','الساعه'];
+const PLACE_ALIAS={'زايد':'اكتوبر','الشيخ زايد':'اكتوبر','6 اكتوبر':'اكتوبر','٦ اكتوبر':'اكتوبر','مدينه نصر':'مدينه نصر','مصر جديده':'مصر الجديده','الدقي':'الدقي','الدقى':'الدقي','اون لاين':'اونلاين','online':'اونلاين','Online':'اونلاين','الاسكندريه':'اسكندريه','اسكندريه':'اسكندريه'};
+const NOPLACE=new Set(['سحب','انسحب','withdrawn','-','—']);
+function splitLoc(loc){const n=AR(loc);if(!n||NOPLACE.has(n.toLowerCase()))return {place:'',sched:''};
+  const w=n.split(' ');let i=w.findIndex(x=>DAYW.includes(x.replace(/^و/,''))||/^\d/.test(x));if(i===0)return {place:'',sched:n};if(i<0)i=w.length;
+  let place=w.slice(0,i).join(' ');place=PLACE_ALIAS[place]||place;return {place,sched:w.slice(i).join(' ')}}
+function roundGroups(ents,roundName){
+  const P={};ents.forEach(e=>{const {place,sched}=splitLoc(e.location);if(!place)return;const p=P[place]=P[place]||{n:0,sch:{},lab:{}};p.n++;if(sched)p.sch[sched]=(p.sch[sched]||0)+1;const l=locKey(e.location);p.lab[l]=(p.lab[l]||0)+1});
+  /* the round's real times: from Settings → Groups with the same name; if none are set, a time counts only when 3 or more students carry it (one-off typos don't split a group) */
+  const set={},orig={};(S.groups||[]).filter(g=>roundName&&locKey(g.name)===locKey(roundName)).forEach(g=>{const raw=locKey((g.location||'')+' '+(g.schedule||''));const {place,sched}=splitLoc(raw);if(place&&sched){(set[place]=set[place]||new Set()).add(sched);orig[place+'|'+sched]=raw}});
+  const tabs=[],tabOf={};const top=o=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
+  Object.entries(P).forEach(([place,p])=>{const real=set[place]?[...set[place]]:Object.keys(p.sch).filter(k=>p.sch[k]>=3);
+    const labOf=sc=>top(Object.fromEntries(Object.entries(p.lab).filter(([l])=>splitLoc(l).sched===sc)));
+    if(real.length>1){real.forEach(sc=>tabs.push({key:place+'|'+sc,place,label:labOf(sc)||orig[place+'|'+sc]||place+' '+sc,n:0}));tabs.push({key:place+'|?',place,label:place+' · time not set',n:0,other:true})}
+    else{const ks=Object.keys(p.sch);const sc=real[0]||(ks.length===1?ks[0]:'');const lab=(sc&&(labOf(sc)||orig[place+'|'+sc]))||labOf('')||place;tabs.push({key:place,place,label:lab,n:0})}});
+  ents.forEach(e=>{const {place,sched}=splitLoc(e.location);let k='_none';if(place){k=tabs.some(t=>t.key===place)?place:(tabs.some(t=>t.key===place+'|'+sched)?place+'|'+sched:place+'|?')}tabOf[e.id??JSON.stringify([e.name,e.phone])]=k;const t=tabs.find(t=>t.key===k);if(t){t.n++;t[e.status]=(t[e.status]||0)+1}});
+  const out=tabs.filter(t=>t.n||!t.other).sort((a,b)=>a.place===b.place?(a.other-b.other)||b.n-a.n:(P[b.place].n-P[a.place].n));
+  const none=ents.filter(e=>tabOf[e.id??JSON.stringify([e.name,e.phone])]==='_none');
+  return {tabs:out,tabOf:e=>tabOf[e.id??JSON.stringify([e.name,e.phone])],none,places:Object.keys(P).length}}
+const inRound=e=>e.status!=='Withdrawn'&&e.status!=='Deferred out';
 async function loadRounds(){
   if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};
   const [rounds,ents]=await Promise.all([Q(S.sb.from('rounds').select('*')),S.rd.round?all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id')):all(()=>S.sb.from('round_entries').select('round_id,status,location'))]);
@@ -1011,7 +1035,7 @@ function roundsView(){
   return S.rd.round?roundSheetView(D):roundsListView(D);
 }
 function roundsListView(D){
-  const cnt={};D.ents.forEach(e=>{const c=cnt[e.round_id]=cnt[e.round_id]||{n:0,locs:new Set()};c.n++;c[e.status]=(c[e.status]||0)+1;if(e.location)c.locs.add(locKey(e.location))});
+  const cnt={};D.ents.forEach(e=>{const c=cnt[e.round_id]=cnt[e.round_id]||{n:0,locs:new Set()};c.n++;c[e.status]=(c[e.status]||0)+1;{const pl=splitLoc(e.location).place;if(pl)c.locs.add(pl)}});
   const list=D.rounds.filter(r=>!S.rd.region||r.region===S.rd.region);
   return `<div class="head"><div><h1>Rounds</h1><div class="sub">Private: only admins and people with Rounds access can open this page. Every reservation that is put in a group lands in its round here automatically.</div></div><div class="sp"></div>
    <button class="btn" data-act="rd-import">Import from Google Sheets</button><button class="btn pri" data-act="rd-new">+ New round</button></div>
@@ -1023,18 +1047,25 @@ function roundsListView(D){
 }
 function roundRows(D){
   const q=S.rd.q.trim().toLowerCase();
-  return D.ents.filter(e=>(S.rd.tab==='all'||(S.rd.tab==='_none'?!locKey(e.location):locKey(e.location)===S.rd.tab))&&(!S.rd.st||e.status===S.rd.st)
+  const G=D.G||(D.G=roundGroups(D.ents,(D.rounds.find(r=>r.id===S.rd.round)||{}).name));
+  return D.ents.filter(e=>(S.rd.tab==='all'||G.tabOf(e)===S.rd.tab)&&(!S.rd.st||e.status===S.rd.st)
     &&(!q||[e.name,e.phone,e.email,e.notes,e.agent,e.ref,e.received_on].some(v=>String(v||'').toLowerCase().includes(q))));
 }
 function roundSheetView(D){
   const r=D.rounds.find(x=>x.id===S.rd.round);if(!r){S.rd.round=null;return roundsListView({...D,ents:[]})}
-  const locs={};let none=0;D.ents.forEach(e=>{const k=locKey(e.location);if(k)locs[k]=(locs[k]||0)+1;else none++});
-  const tabs=Object.entries(locs).sort((a,b)=>b[1]-a[1]);
   const rows=roundRows(D);const sc={};D.ents.forEach(e=>sc[e.status]=(sc[e.status]||0)+1);
+  const G=D.G||(D.G=roundGroups(D.ents,r.name));const tabs=G.tabs,none=G.none.length;
+  if(S.rd.tab!=='all'&&S.rd.tab!=='_none'&&!tabs.some(t=>t.key===S.rd.tab))S.rd.tab='all';
+  const gsum=[...tabs,...(none?[{key:'_none',label:'No group yet',n:none,...G.none.reduce((a,e)=>(a[e.status]=(a[e.status]||0)+1,a),{})}]:[])];
+  const summary=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="gsum"><thead><tr><th>Group</th><th class="num">In the round</th><th class="num">Deferred in</th><th class="num">Later start</th><th class="num">Deferred out</th><th class="num">Withdrawn</th><th class="num">Total</th></tr></thead><tbody>
+   ${gsum.map(t=>`<tr class="click ${S.rd.tab===t.key?'on':''}" data-act="rd-tab" data-k="${esc(t.key)}"><td class="ar" dir="auto"><b>${esc(t.label)}</b></td><td class="num"><b>${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)}</b></td><td class="num">${t['Deferred in']||''}</td><td class="num">${t['Later start']||''}</td><td class="num">${t['Deferred out']||''}</td><td class="num">${t['Withdrawn']||''}</td><td class="num">${t.n}</td></tr>`).join('')}
+   <tr class="tot click" data-act="rd-tab" data-k="all"><td><b>All groups</b></td><td class="num"><b>${D.ents.filter(inRound).length}</b></td><td class="num">${sc['Deferred in']||''}</td><td class="num">${sc['Later start']||''}</td><td class="num">${sc['Deferred out']||''}</td><td class="num">${sc['Withdrawn']||''}</td><td class="num">${D.ents.length}</td></tr></tbody></table></div>`;
+  
   const cell=(e,k)=>{const v=e[k];if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
   return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${plural(D.ents.length,'student')} · ${esc(r.status)}</div></div><div class="sp"></div>
    <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
-  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${tabs.map(([k,n])=>`<button data-act="rd-tab" data-k="${esc(k)}" class="ar ${S.rd.tab===k?'on':''}">${esc(k)} · ${n}</button>`).join('')}${none?`<button data-act="rd-tab" data-k="_none" class="${S.rd.tab==='_none'?'on':''}">No group yet · ${none}</button>`:''}</div>
+  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto">${esc(t.label)} · ${t.n}</button>`).join('')}${none?`<button data-act="rd-tab" data-k="_none" class="${S.rd.tab==='_none'?'on':''}">No group yet · ${none}</button>`:''}</div>
+  ${S.rd.tab==='all'?summary:''}
   <div class="row"><input class="inp" data-in="rdq" id="rd-q" placeholder="Search name, mobile, email, notes…" value="${esc(S.rd.q)}" style="max-width:320px">
    <select class="inp" data-ch="rd-st" id="rd-st" style="max-width:260px"><option value="">All statuses</option>${Object.keys(RST).map(s=>`<option value="${s}" ${S.rd.st===s?'selected':''}>${s} · ${sc[s]||0}</option>`).join('')}</select>
    <div class="sp"></div><div class="rlegend">${Object.entries(RST).filter(([k])=>k!=='Active').map(([k,v])=>`<span><i style="background:${v.bd}"></i>${esc(k)}</span>`).join('')}</div></div>
@@ -1054,9 +1085,9 @@ function roundModal(id){
   </div><div class="mf"><button class="btn pri" data-act="rd-save-round">Save</button>${id&&isAdmin()?`<button class="btn bad" data-act="rd-del-round" data-id="${id}">Delete round</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`);
 }
 function entryModal(id){
-  const D=S.d.rounds;const e=id?D.ents.find(x=>x.id===id):{status:'Active',location:S.rd.tab!=='all'&&S.rd.tab!=='_none'?S.rd.tab:''};const auto=!!e.reservation_id;
+  const D=S.d.rounds;const e=id?D.ents.find(x=>x.id===id):{status:'Active',location:S.rd.tab!=='all'&&S.rd.tab!=='_none'?((D.G&&D.G.tabs.find(t=>t.key===S.rd.tab)||{}).label||''):''};const auto=!!e.reservation_id;
   const round=D.rounds.find(r=>r.id===S.rd.round);
-  const locs=[...new Set(D.ents.map(x=>locKey(x.location)).filter(Boolean).concat(S.groups.filter(g=>g.name===round.name).map(g=>locKey((g.location||'')+' '+(g.schedule||'')))))];
+  const locs=[...new Set((D.G?D.G.tabs.map(t=>t.label):[]).concat(S.groups.filter(g=>g.name===round.name).map(g=>locKey((g.location||'')+' '+(g.schedule||'')))))];
   S.modal={type:'rentry',id};
   const f=(k,t,cls='')=>`<div class="field"><label for="re-${k}">${t}</label><input class="inp ${cls}" dir="auto" id="re-${k}" value="${esc(e[k]??'')}" ${auto&&!['notes','email','ref'].includes(k)?'disabled':''} ${k==='location'?'list="re-locs"':''}></div>`;
   openModal(`${mhead(id?'<span class="ar">'+esc(e.name||'Student')+'</span>':'Add student to '+esc(round.name))}<div class="mb">
@@ -1082,9 +1113,10 @@ function exportRoundXlsx(){
   const sheet=rows=>{const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{}]);if(rows.length){const keys=Object.keys(rows[0]);ws['!cols']=keys.map(k=>({wch:Math.min(50,Math.max(k.length+2,...rows.map(x=>String(x[k]??'').length+2)))}));ws['!autofilter']={ref:ws['!ref']}}return ws};
   const wb=XLSX.utils.book_new();const used=new Set();const nm=s=>{let n=String(s).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31).trim()||'Sheet';let k=n,i=2;while(used.has(k)){k=n.slice(0,28)+' '+i++}used.add(k);return k};
   XLSX.utils.book_append_sheet(wb,sheet(D.ents.map(row)),nm(r.name));
-  const locs={};D.ents.forEach(e=>{const k=locKey(e.location)||'No group yet';(locs[k]=locs[k]||[]).push(e)});
-  Object.entries(locs).sort((a,b)=>b[1].length-a[1].length).forEach(([k,es])=>XLSX.utils.book_append_sheet(wb,sheet(es.map(row)),nm(k)));
-  const st=Object.keys(RST).map(s=>({'Status':s,'Meaning':RST[s].t,'Students':D.ents.filter(e=>e.status===s).length}));XLSX.utils.book_append_sheet(wb,sheet(st),nm('Summary'));
+  const G=D.G||(D.G=roundGroups(D.ents,r.name));
+  G.tabs.forEach(t=>XLSX.utils.book_append_sheet(wb,sheet(D.ents.filter(e=>G.tabOf(e)===t.key).map(row)),nm(t.label)));
+  if(G.none.length)XLSX.utils.book_append_sheet(wb,sheet(G.none.map(row)),nm('No group yet'));
+  const st=[...G.tabs,...(G.none.length?[{key:'_none',label:'No group yet'}]:[])].map(t=>{const es=t.key==='_none'?G.none:D.ents.filter(e=>G.tabOf(e)===t.key);const o={'Group':t.label,'In the round':es.filter(inRound).length};Object.keys(RST).forEach(s=>o[s]=es.filter(e=>e.status===s).length);o['Total']=es.length;return o});XLSX.utils.book_append_sheet(wb,sheet(st),nm('Summary'));
   wb.Workbook={Views:[{RTL:true}]};
   XLSX.writeFile(wb,r.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓');
 }
