@@ -183,6 +183,7 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .sheet-wrap{max-height:70vh;overflow:auto}.sheet{font-size:12.5px;min-width:1500px}.sheet th{position:sticky;top:0;z-index:1;background:var(--surface)}
 .sheet td{padding:6px 8px;vertical-align:top}.sheet td.c-notes{min-width:260px;max-width:380px}.sheet td.c-email{font-size:11.5px}.sheet td.c-name{font-weight:600;min-width:150px}
 .sheet td.c-location{min-width:170px}.rst{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.tabs button.tab-warn{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}.tabs button.tab-warn.on{background:var(--warn);color:#fff}.locpick{min-width:170px;padding:4px 8px;font-size:13px;border-color:var(--warn);background:var(--warn-soft)}
 .gsum{width:100%;border-collapse:collapse}.gsum th,.gsum td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:start}.gsum td.num,.gsum th.num{text-align:center}.gsum tr.on td{background:var(--accent-soft,#eef2ff)}.gsum tr.tot td{border-top:2px solid var(--line);background:var(--bg)}
 .rlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}.rlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
 .pstats{display:flex;flex-wrap:wrap;gap:8px}.pstats div{background:var(--bg);border-radius:10px;padding:8px 12px;min-width:92px}.pstats b{display:block;font-size:18px}.pstats span{font-size:12px;color:var(--muted)}
@@ -537,7 +538,7 @@ function resBalance(r){const price=r.price!=null?+r.price:null;const paid=+r.amo
   if(price==null)return {price,paid,over:0,remain:0,closed};return {price,paid,over:!closed&&paid>price?paid-price:0,remain:!closed&&paid<price?price-paid:0,closed}}
 function balancePill(r){const b=resBalance(r);if(b.closed)return `<span class="pill ${RSTATUS[r.status]||''}">${esc(r.status)}</span>`;if(b.over)return `<span class="pill amber">Refund due ${egp(b.over)}</span>`;if(b.remain)return `<span class="pill">Remaining ${egp(b.remain)}</span>`;if(b.price!=null)return '<span class="pill green">Fully paid</span>';return '<span class="hint">No course price</span>'}
 function resCard(r,leadId){const b=resBalance(r);
-  return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px"><div class="row" style="justify-content:space-between"><b><span class="num">${esc(r.code)}</span> · ${esc(r.course||'')}</b><span>${r.group_id?esc(groupName(r.group_id)):'<span class="pill amber">No group yet</span>'} <span class="pill ${RSTATUS[r.status]||''}">${esc(r.status)}</span></span></div>
+  return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px"><div class="row" style="justify-content:space-between"><b><span class="num">${esc(r.code)}</span> · ${esc(r.course||'')}</b><span>${r.group_id?esc(groupName(r.group_id)):r.round_name?`${esc(r.round_name)} · <span class="pill amber">Group not chosen</span>`:'<span class="pill amber">No group yet</span>'} <span class="pill ${RSTATUS[r.status]||''}">${esc(r.status)}</span></span></div>
    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kpi('Course price',b.price!=null?egp(b.price):'—')}${kpi('Paid (net)',egp(b.paid))}${kpi('Refunded',egp(r.refunded||0))}<div class="kpi"><span>Balance</span><div style="margin-top:6px">${balancePill(r)}</div></div></div>
    ${(r.payments||[]).length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Note</th><th>By</th></tr></thead><tbody>${r.payments.map(p=>`<tr><td class="num">${fmtDay(p.pay_date)}</td><td>${p.kind==='refund'?`<span class="pill red">Refund${p.refund_reason?' · '+esc(p.refund_reason):''}</span>`:'<span class="pill green">Payment</span>'}</td><td class="n">${p.kind==='refund'?'−':''}${egp(p.amount)}</td><td>${esc(p.method||'')}${p.kind==='refund'&&(p.refund_phone||p.refund_name)?`<span class="s num">to ${esc(p.refund_phone||'')}</span><span class="s ar">${esc(p.refund_name||'')}</span>`:''}</td><td class="ar" dir="auto">${p.refund_why?`<b>Why:</b> ${esc(p.refund_why)}`:''}${p.refund_why&&p.note?'<br>':''}${esc(p.note||'')}</td><td class="ar">${esc(pname(p.by))}</td></tr>`).join('')}</tbody></table></div>`:''}
    ${b.closed?'':`<div class="row"><button class="btn sm" data-act="pay-add" data-id="${r.id}" data-l="${leadId}">+ Add payment</button>${b.over?`<button class="btn sm pri" data-act="refund" data-id="${r.id}" data-l="${leadId}" data-k="overpaid">Refund overpayment ${egp(b.over)}</button>`:''}${b.paid>0?`<button class="btn sm bad" data-act="refund" data-id="${r.id}" data-l="${leadId}" data-k="refund">Refund</button>`:''}</div>`}</div>`}
@@ -636,7 +637,7 @@ async function callModal(id){
     <div class="field"><label for="c-fu">Next follow-up</label><input type="date" class="inp" id="c-fu" value="${esc(l.follow_up||'')}"></div></div>
    <div id="res-box" class="card" style="background:var(--bg);display:none"><h3 style="margin-bottom:10px">Reservation details</h3>
     <div class="row"><div class="field"><label for="r-course">Course</label><select class="inp" id="r-course" data-act-ch="r-course">${courseNames().map(c=>`<option ${c===l.course?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
-     <div class="field"><label for="r-group">Group / round</label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course)}</select>${isAdmin()?'<a href="#config" class="hint" data-act="close">+ Add a new group in Settings</a>':''}</div></div>
+     <div class="field"><label for="r-group">Group / round</label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course,true)}</select>${isAdmin()?'<a href="#config" class="hint" data-act="close">+ Add a new group in Settings</a>':''}</div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-att">Attendance</label><select class="inp" id="r-att"><option>Offline</option><option>Online</option></select></div>
      <div class="field"><label for="r-amt">Amount paid (EGP) <i>*</i></label><input class="inp num" type="number" min="0" id="r-amt" placeholder="${course&&course.price?course.price:''}"></div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-pay">Payment</label><select class="inp" id="r-pay"><option>Deposit</option><option>Full</option></select></div>
@@ -649,7 +650,7 @@ async function callModal(id){
    <details><summary style="cursor:pointer;font-weight:600">History (${F.events.length})</summary><div class="timeline" style="margin-top:8px;max-height:260px;overflow:auto">${F.events.slice().reverse().map(eventLine).join('')}</div></details>
   </div><div class="mf"><button class="btn pri" data-act="save-call" data-id="${l.id}">Save</button><button class="btn" data-act="close">Cancel</button></div>`);
 }
-function groupOptions(course){const gs=S.groups.filter(g=>g.active&&(!course||g.course===course));return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${gs.map(g=>`<option value="${g.id}" data-mode="${esc(g.mode||'')}">${esc(g.name)}${g.location?' · '+esc(g.location):''}${g.schedule?' · '+esc(g.schedule):''}${g.start_date?' · starts '+fmtDay(g.start_date):''}</option>`).join('')}`}
+function groupOptions(course,withRounds){const gs=S.groups.filter(g=>g.active&&(!course||g.course===course));const rn=withRounds?[...new Set(gs.map(g=>locKey(g.name)).filter(Boolean))]:[];return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${rn.length?`<optgroup label="Round known, place / time not chosen yet">${rn.map(n=>`<option value="r:${esc(n)}">${esc(n)} · group not chosen yet</option>`).join('')}</optgroup><optgroup label="Group (place / time)">`:''}${gs.map(g=>`<option value="${g.id}" data-mode="${esc(g.mode||'')}">${esc(g.name)}${g.location?' · '+esc(g.location):''}${g.schedule?' · '+esc(g.schedule):''}${g.start_date?' · starts '+fmtDay(g.start_date):''}</option>`).join('')}${rn.length?'</optgroup>':''}`}
 async function saveCall(id){
   const l=S.modal?.lead;if(!l||l.id!==id)return;
   const st=$('#c-st').value,cm=$('#c-cm').value.trim(),mv=$('#c-mv')?.value;
@@ -657,7 +658,7 @@ async function saveCall(id){
   if(st&&!cm){toast('Add a comment about the call');return}
   let resv=null;
   if(st==='Reserved'){const amt=$('#r-amt').value;if(amt===''){toast('Enter the amount paid');return}
-    resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value,plan:$('#r-plan').value||null,paid_to:$('#r-to').value.trim()||null,email:$('#r-email').value.trim()||null};}
+    resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,round_name:$('#r-group').value.startsWith('r:')?$('#r-group').value.slice(2):null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value,plan:$('#r-plan').value||null,paid_to:$('#r-to').value.trim()||null,email:$('#r-email').value.trim()||null};}
   const name=$('#c-name').value.trim()||l.name||'Unknown',city=$('#c-city').value||l.city||null;
   const patch={name,city,interest_group:$('#c-gr').value||null,follow_up:$('#c-fu').value||null};
   if(st){const qv=$('#c-q').value;patch.status=st;patch.qualified=qv===''?l.qualified:qv==='1';patch.last_call_at=nowISO();patch.calls_count=(l.calls_count||0)+1;
@@ -760,7 +761,7 @@ function resView(){
    <label class="row" style="gap:6px"><input type="checkbox" data-act="res-due" ${S.resf.due?'checked':''}> Only refunds due</label></div>
   <div class="tbl-wrap"><table class="cards"><thead><tr><th>Contract</th><th>Client</th>${mgr?'<th>Agent</th>':''}<th>Course</th><th>Group / location</th><th>Attendance</th><th>Price</th><th>Paid (net)</th><th>Refunded</th><th>Balance</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody>
   ${R?R.map(r=>`<tr class="click" data-act="${r.lead_id?'client':'noop'}" data-id="${r.lead_id||''}"><td data-l="Contract" class="num">${esc(r.code)}</td><td data-l="Client"><div><b class="ar">${esc(r.client_name||'—')}</b><span class="s num">${esc(r.phone||'')}</span></div></td>${mgr?`<td data-l="Agent" class="ar">${esc(pname(r.agent_id))}</td>`:''}
-   <td data-l="Course">${esc(r.course||'—')}</td><td data-l="Group">${r.group_id?esc(groupName(r.group_id)):'<span class="pill amber">No group yet</span>'}</td><td data-l="Attendance">${esc(r.attendance||'—')}</td>
+   <td data-l="Course">${esc(r.course||'—')}</td><td data-l="Group">${r.group_id?esc(groupName(r.group_id)):r.round_name?`${esc(r.round_name)} · <span class="pill amber">Group not chosen</span>`:'<span class="pill amber">No group yet</span>'}</td><td data-l="Attendance">${esc(r.attendance||'—')}</td>
    <td data-l="Price" class="n">${r.price!=null?egp(r.price):'—'}</td><td data-l="Paid (net)" class="n"><b>${egp(r.amount)}</b></td><td data-l="Refunded" class="n">${+r.refunded?egp(r.refunded):'—'}</td><td data-l="Balance">${balancePill(r)}</td><td data-l="Date" class="num">${fmtDay(r.res_date)}</td>
    <td data-l="Status">${mgr?`<select class="inp" data-act="noop" data-ch="res-status" data-id="${r.id}" aria-label="Status">${Object.keys(RSTATUS).map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}</select>`:`<span class="pill ${RSTATUS[r.status]||''}">${esc(r.status)}</span>`}</td><td>${(()=>{const b=resBalance(r);return !b.closed&&b.paid>0?`<button class="btn sm bad" data-act="refund" data-id="${r.id}" data-l="${r.lead_id||''}" data-k="refund">Refund</button>`:''})()}</td></tr>`).join('')||'<tr><td colspan="13" class="empty">No reservations here</td></tr>':'<tr><td colspan="13" class="empty"><span class="spin"></span></td></tr>'}
   </tbody></table></div><div class="hint">Click Refund on any reservation, or open the client to see all their payments. A client who paid more than the course price shows "Refund due".</div>`;
@@ -1023,6 +1024,7 @@ function roundGroups(ents,roundName){
   const out=tabs.filter(t=>t.n||!t.other).sort((a,b)=>a.place===b.place?(a.other-b.other)||b.n-a.n:(P[b.place].n-P[a.place].n));
   const none=ents.filter(e=>tabOf[e.id??JSON.stringify([e.name,e.phone])]==='_none');
   return {tabs:out,tabOf:e=>tabOf[e.id??JSON.stringify([e.name,e.phone])],none,places:Object.keys(P).length}}
+const NONE_LBL='Group not chosen';
 const inRound=e=>e.status!=='Withdrawn'&&e.status!=='Deferred out';
 async function loadRounds(){
   if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};
@@ -1056,16 +1058,16 @@ function roundSheetView(D){
   const rows=roundRows(D);const sc={};D.ents.forEach(e=>sc[e.status]=(sc[e.status]||0)+1);
   const G=D.G||(D.G=roundGroups(D.ents,r.name));const tabs=G.tabs,none=G.none.length;
   if(S.rd.tab!=='all'&&S.rd.tab!=='_none'&&!tabs.some(t=>t.key===S.rd.tab))S.rd.tab='all';
-  const gsum=[...tabs,...(none?[{key:'_none',label:'No group yet',n:none,...G.none.reduce((a,e)=>(a[e.status]=(a[e.status]||0)+1,a),{})}]:[])];
+  const gsum=[...tabs,...(none?[{key:'_none',label:NONE_LBL,n:none,...G.none.reduce((a,e)=>(a[e.status]=(a[e.status]||0)+1,a),{})}]:[])];
   const summary=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="gsum"><thead><tr><th>Group</th><th class="num">In the round</th><th class="num">Deferred in</th><th class="num">Later start</th><th class="num">Deferred out</th><th class="num">Withdrawn</th><th class="num">Total</th></tr></thead><tbody>
    ${gsum.map(t=>`<tr class="click ${S.rd.tab===t.key?'on':''}" data-act="rd-tab" data-k="${esc(t.key)}"><td class="ar" dir="auto"><b>${esc(t.label)}</b></td><td class="num"><b>${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)}</b></td><td class="num">${t['Deferred in']||''}</td><td class="num">${t['Later start']||''}</td><td class="num">${t['Deferred out']||''}</td><td class="num">${t['Withdrawn']||''}</td><td class="num">${t.n}</td></tr>`).join('')}
    <tr class="tot click" data-act="rd-tab" data-k="all"><td><b>All groups</b></td><td class="num"><b>${D.ents.filter(inRound).length}</b></td><td class="num">${sc['Deferred in']||''}</td><td class="num">${sc['Later start']||''}</td><td class="num">${sc['Deferred out']||''}</td><td class="num">${sc['Withdrawn']||''}</td><td class="num">${D.ents.length}</td></tr></tbody></table></div>`;
   
-  const cell=(e,k)=>{const v=e[k];if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
+  const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>`<option>${esc(l)}</option>`).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
   return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${plural(D.ents.length,'student')} · ${esc(r.status)}</div></div><div class="sp"></div>
    <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
-  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto">${esc(t.label)} · ${t.n}</button>`).join('')}${none?`<button data-act="rd-tab" data-k="_none" class="${S.rd.tab==='_none'?'on':''}">No group yet · ${none}</button>`:''}</div>
-  ${S.rd.tab==='all'?summary:''}
+  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${none?`<button data-act="rd-tab" data-k="_none" class="tab-warn ${S.rd.tab==='_none'?'on':''}">⚠ ${NONE_LBL} · ${none}</button>`:''}${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto">${esc(t.label)} · ${t.n}</button>`).join('')}</div>
+  ${S.rd.tab==='all'?summary:''}${S.rd.tab==='_none'?`<div class="note">These students are in ${esc(r.name)} but haven't chosen a place / time yet. Pick their group from the list in the Group column, or open the row. When sales puts the reservation in a group, the row moves to its group here by itself.</div>`:''}
   <div class="row"><input class="inp" data-in="rdq" id="rd-q" placeholder="Search name, mobile, email, notes…" value="${esc(S.rd.q)}" style="max-width:320px">
    <select class="inp" data-ch="rd-st" id="rd-st" style="max-width:260px"><option value="">All statuses</option>${Object.keys(RST).map(s=>`<option value="${s}" ${S.rd.st===s?'selected':''}>${s} · ${sc[s]||0}</option>`).join('')}</select>
    <div class="sp"></div><div class="rlegend">${Object.entries(RST).filter(([k])=>k!=='Active').map(([k,v])=>`<span><i style="background:${v.bd}"></i>${esc(k)}</span>`).join('')}</div></div>
@@ -1084,14 +1086,23 @@ function roundModal(id){
    <div class="hint">A group in Settings whose name is exactly the same as this round (for example "Round 43") sends its reservations here.</div>
   </div><div class="mf"><button class="btn pri" data-act="rd-save-round">Save</button>${id&&isAdmin()?`<button class="btn bad" data-act="rd-del-round" data-id="${id}">Delete round</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`);
 }
+function locPickOptions(D,r){const G=D.G||(D.G=roundGroups(D.ents,r.name));
+  return [...new Set(G.tabs.filter(t=>!t.other).map(t=>t.label).concat(S.groups.filter(g=>locKey(g.name)===locKey(r.name)).map(g=>locKey((g.location||'')+' '+(g.schedule||'')))).filter(Boolean))]}
+async function setEntryLoc(id,loc){await Q(S.sb.from('round_entries').update({location:locKey(loc)||null,updated_at:nowISO(),updated_by:S.me.id}).eq('id',id));toast('Group saved ✓');await refreshRoundEnts(true)}
+async function refreshRoundEnts(force){if(!S.rd||!S.rd.round||!S.d.rounds)return;
+  const ents=await all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id'));
+  const sig=x=>x.length+'|'+x.map(e=>e.id+':'+(e.updated_at||'')).join(',');if(!force&&sig(ents)===sig(S.d.rounds.ents))return;
+  const sw=$('.sheet-wrap'),sl=sw?sw.scrollLeft:0,sy=window.scrollY;S.d.rounds={...S.d.rounds,ents,G:null};render();const sw2=$('.sheet-wrap');if(sw2)sw2.scrollLeft=sl;window.scrollTo(0,sy)}
+/* the round sheet refreshes itself every 20 seconds, so a reservation sales just added shows up without reloading */
+setInterval(()=>{const ae=document.activeElement;if(S.view!=='rounds'||!S.rd||!S.rd.round||S.modal||document.hidden||(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)))return;refreshRoundEnts(false).catch(e=>console.warn(e))},20000);
 function entryModal(id){
   const D=S.d.rounds;const e=id?D.ents.find(x=>x.id===id):{status:'Active',location:S.rd.tab!=='all'&&S.rd.tab!=='_none'?((D.G&&D.G.tabs.find(t=>t.key===S.rd.tab)||{}).label||''):''};const auto=!!e.reservation_id;
   const round=D.rounds.find(r=>r.id===S.rd.round);
   const locs=[...new Set((D.G?D.G.tabs.map(t=>t.label):[]).concat(S.groups.filter(g=>g.name===round.name).map(g=>locKey((g.location||'')+' '+(g.schedule||'')))))];
   S.modal={type:'rentry',id};
-  const f=(k,t,cls='')=>`<div class="field"><label for="re-${k}">${t}</label><input class="inp ${cls}" dir="auto" id="re-${k}" value="${esc(e[k]??'')}" ${auto&&!['notes','email','ref'].includes(k)?'disabled':''} ${k==='location'?'list="re-locs"':''}></div>`;
+  const f=(k,t,cls='')=>`<div class="field"><label for="re-${k}">${t}</label><input class="inp ${cls}" dir="auto" id="re-${k}" value="${esc(e[k]??'')}" ${auto&&!['notes','email','ref','location'].includes(k)?'disabled':''} ${k==='location'?'list="re-locs"':''}></div>`;
   openModal(`${mhead(id?'<span class="ar">'+esc(e.name||'Student')+'</span>':'Add student to '+esc(round.name))}<div class="mb">
-   ${auto?`<div class="note">Added automatically from reservation <b>${esc(e.ref||'')}</b>. Name, mobile, paid amount, agent, group and plan follow the reservation. You can change the status, notes and email here.</div>`:''}
+   ${auto?`<div class="note">Added automatically from reservation <b>${esc(e.ref||'')}</b>. Name, mobile, paid amount, agent and plan follow the reservation. You can change the group, status, notes and email here. If sales later puts the reservation in a group, that group is used.</div>`:''}
    <div class="row">${f('name','Name','ar')}${f('phone','Mobile')}</div>
    <div class="row">${f('booked_on','Booked on (d/m)')}${f('ref','Code')}${f('deposit','Paid (EGP)')}</div>
    <div class="row">${f('received_on','Paid to (VC / InstaPay number)','ar')}${f('agent','Agent','ar')}</div>
@@ -1104,7 +1115,7 @@ function entryModal(id){
   </div><div class="mf"><button class="btn pri" data-act="rd-save-entry">Save</button>${id?`<button class="btn bad" data-act="rd-del-entry" data-id="${id}">Delete row</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`,true);
 }
 function readEntry(){const g=k=>{const el=$('#re-'+k);return el?el.value.trim():''};
-  const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
+  const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,location:locKey(g('location'))||null,status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
   if(!$('#re-name').disabled)Object.assign(v,{name:g('name')||null,phone:g('phone')||null,booked_on:g('booked_on')||null,deposit:g('deposit')===''?null:+g('deposit').replace(/[^\d.]/g,'')||null,received_on:g('received_on')||null,agent:g('agent')||null,location:locKey(g('location'))||null,plan:g('plan')||null});
   return v}
 function exportRoundXlsx(){
@@ -1115,8 +1126,8 @@ function exportRoundXlsx(){
   XLSX.utils.book_append_sheet(wb,sheet(D.ents.map(row)),nm(r.name));
   const G=D.G||(D.G=roundGroups(D.ents,r.name));
   G.tabs.forEach(t=>XLSX.utils.book_append_sheet(wb,sheet(D.ents.filter(e=>G.tabOf(e)===t.key).map(row)),nm(t.label)));
-  if(G.none.length)XLSX.utils.book_append_sheet(wb,sheet(G.none.map(row)),nm('No group yet'));
-  const st=[...G.tabs,...(G.none.length?[{key:'_none',label:'No group yet'}]:[])].map(t=>{const es=t.key==='_none'?G.none:D.ents.filter(e=>G.tabOf(e)===t.key);const o={'Group':t.label,'In the round':es.filter(inRound).length};Object.keys(RST).forEach(s=>o[s]=es.filter(e=>e.status===s).length);o['Total']=es.length;return o});XLSX.utils.book_append_sheet(wb,sheet(st),nm('Summary'));
+  if(G.none.length)XLSX.utils.book_append_sheet(wb,sheet(G.none.map(row)),nm(NONE_LBL));
+  const st=[...G.tabs,...(G.none.length?[{key:'_none',label:NONE_LBL}]:[])].map(t=>{const es=t.key==='_none'?G.none:D.ents.filter(e=>G.tabOf(e)===t.key);const o={'Group':t.label,'In the round':es.filter(inRound).length};Object.keys(RST).forEach(s=>o[s]=es.filter(e=>e.status===s).length);o['Total']=es.length;return o});XLSX.utils.book_append_sheet(wb,sheet(st),nm('Summary'));
   wb.Workbook={Views:[{RTL:true}]};
   XLSX.writeFile(wb,r.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓');
 }
@@ -1479,7 +1490,7 @@ document.addEventListener('change',async e=>{
   if(el.dataset.actCh==='py-meth'){const l=$('#py-phone-l');if(l)l.innerHTML=el.value==='Bank transfer'?'Account / IBAN number <i>*</i>':el.value==='Cash'?'Phone number (optional)':el.value==='InstaPay'?'InstaPay number or address <i>*</i>':'Wallet number <i>*</i>';return}
   if(el.dataset.actCh==='r-group'){const m=el.selectedOptions[0]&&el.selectedOptions[0].dataset.mode;if(m)$('#r-att').value=m;return}
   if(el.dataset.actCh==='py-reason'){const b=resBalance(S.modal.res);if(el.value==='overpaid'){$('#py-amt').value=b.over||'';$('#py-close').checked=false}else if(el.value==='cancelled'){$('#py-amt').value=b.paid||'';$('#py-close').checked=true}return}
-  if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value);return}
+  if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value,true);return}
   if(el.dataset.actCh==='i-lead'){const o=el.selectedOptions[0];if(o&&o.value){$('#i-name').value=o.dataset.n||'';$('#i-phone').value=o.dataset.p||'';$('#i-course').value=o.dataset.c||''}return}
   if(el.id==='br-logo'&&el.files[0]){const f=el.files[0];const img=new Image();img.onload=()=>{const c=document.createElement('canvas');const sc=Math.min(1,256/Math.max(img.width,img.height));c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);c.getContext('2d').drawImage(img,0,0,c.width,c.height);S.brandLogo=c.toDataURL('image/png');$('#br-prev').src=S.brandLogo;URL.revokeObjectURL(img.src)};img.onerror=()=>toast("Couldn't read that image");img.src=URL.createObjectURL(f);return}
   if(el.id==='imp-file'&&el.files[0]){readFile(el.files[0]);return}
@@ -1491,6 +1502,7 @@ document.addEventListener('change',async e=>{
   else if(k.startsWith('imp.')){impState()[k.slice(4)]=el.value;render()}
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
   else if(k==='rd-st'){S.rd.st=el.value;render()}
+  else if(k==='rd-loc'){let v=el.value;if(v==='__other'){v=(prompt('Group (place, day, time)')||'').trim();if(!v){el.value='';return}}if(v)await guard(()=>setEntryLoc(+el.dataset.id,v))}
   else if(k==='mr-date'){S.rf.mdate=el.value;loadView()}
   else if(k==='mr-d'){mrRefresh()}
   else if(k==='att-who'){S.att.who=el.value;render()}
