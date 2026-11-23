@@ -552,12 +552,43 @@ async function loadLeads(){
     f.tab==='new'&&!f.page?loadDue(S.me.role==='agent'?null:f.agent):Promise.resolve([])]);
   S.d.leads={rows:r.data,count:r.count,due};
 }
+
+/* ---- New client: agents add on themselves, team leaders / admins pick the agent ---- */
+function newClientModal(){
+  const mgr=isMgr();const ags=mgr?myAgents():[];const meOpt=S.me.role!=='agent';
+  S.modal={type:'newclient'};
+  openModal(`${mhead('New client')}<div class="mb">
+   <div class="row"><div class="field"><label for="nc-name">Name</label><input class="inp" id="nc-name" dir="auto" placeholder="Client name"></div>
+    <div class="field"><label for="nc-phone">Mobile <i>*</i></label><input class="inp" id="nc-phone" inputmode="tel" dir="ltr" placeholder="01xxxxxxxxx" data-act-in="nc-phone"></div></div>
+   <div id="nc-dup" class="note" style="display:none"></div>
+   <div class="row"><div class="field"><label for="nc-course">Course <i>*</i></label><select class="inp" id="nc-course"><option value="">— Select —</option>${courseNames().map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
+    <div class="field"><label for="nc-pl">Channel <i>*</i></label><select class="inp" id="nc-pl"><option value="">— Select —</option>${[...platforms(),'WhatsApp','Phone call','Walk-in','Referral'].filter((v,i,a)=>a.indexOf(v)===i).map(c=>`<option>${esc(c)}</option>`).join('')}</select></div></div>
+   <div class="row"><div class="field"><label for="nc-city">Governorate</label><select class="inp" id="nc-city"><option value="">—</option>${GOVS.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div>
+    ${mgr?`<div class="field"><label for="nc-ag">Agent <i>*</i></label><select class="inp ar" id="nc-ag"><option value="">— Pick an agent —</option>${meOpt?`<option value="${S.me.id}">Me (${esc(S.me.name)})</option>`:''}${ags.filter(a=>a.id!==S.me.id).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>`:`<div class="field"><label>Agent</label><div class="inp" style="background:var(--bg)">${esc(S.me.name)}</div></div>`}</div>
+   <div class="field"><label for="nc-note">Note</label><textarea class="inp" id="nc-note" rows="2" dir="auto" placeholder="What the client asked about (optional)"></textarea></div>
+  </div><div class="mf"><button class="btn ghost" data-act="close">Cancel</button><button class="btn pri" data-act="nc-save">Add client</button></div>`);
+  setTimeout(()=>$('#nc-phone')&&$('#nc-phone').focus(),50)}
+let NC_T=null;
+async function ncCheckDup(){const v=$('#nc-phone');const box=$('#nc-dup');if(!v||!box)return null;const ph=normPhone(v.value);if(!ph){box.style.display='none';return null}
+  try{const {data,error}=await S.sb.rpc('lead_phone_owner',{p:ph});if(error)throw error;
+    if(data&&data.length){box.style.display='';box.innerHTML=`⚠ This number is already in the system with <b>${esc(data[0].agent)}</b> (${esc(data[0].status)}, added ${esc(fmtDay(dayOf(data[0].created_at)))}).`;return data}
+    box.style.display='none';return []}catch(e){return null}}
+async function ncSave(){
+  const name=$('#nc-name').value.trim()||'Unknown',raw=$('#nc-phone').value,course=$('#nc-course').value,platform=$('#nc-pl').value,city=$('#nc-city').value||null,note=$('#nc-note').value.trim();
+  const phone=normPhone(raw);if(!phone){toast('Enter a valid Egyptian mobile number');$('#nc-phone').focus();return}
+  if(!course){toast('Pick the course');$('#nc-course').focus();return}
+  if(!platform){toast('Pick the channel');$('#nc-pl').focus();return}
+  const agent=isMgr()?$('#nc-ag').value:S.me.id;if(!agent){toast('Pick the agent');$('#nc-ag').focus();return}
+  const dup=await ncCheckDup();if(dup&&dup.length){toast('This number is already in the system — search for it in Leads');return}
+  const ok=await guard(async()=>{const l=await Q(S.sb.from('leads').insert({name,phone,city,course,platform,status:'New',agent_id:agent,assigned_at:nowISO(),created_by:S.me.id}).select('id').single());
+    await Q(S.sb.from('lead_events').insert({lead_id:l.id,type:'created',by:S.me.id,comment:note||null,data:{platform,course,agent_id:agent,manual:true}}))},'Client added ✓');
+  if(ok){closeModal();loadView()}}
 function leadsView(){
   const D=S.d.leads;const f=S.f;const mgr=isMgr();const t=today();
   const tabs=[['all','All (by period)'],['new','New calls'],['later','⏰ Call later'],['fu','Follow-ups'],['res','Reserved']];
   const count=D?D.count:0;const pages=Math.max(1,Math.ceil(count/PAGE));
   return `<div class="head"><div><h1>${S.me.role==='agent'?'My Leads':S.me.role==='tl'?'Team Leads':'All Leads'}</h1><div class="sub">${D?plural(count,'lead'):'Loading…'}</div></div><div class="sp"></div>
-   ${mgr?`<button class="btn" data-act="leads-csv">Export CSV</button><a class="btn pri" href="#import">+ Import leads</a>`:''}</div>
+   <button class="btn pri" data-act="nc-open">+ New client</button>${mgr?`<button class="btn" data-act="leads-csv">Export CSV</button><a class="btn" href="#import">+ Import leads</a>`:''}</div>
   <div class="tabs">${tabs.map(([k,t])=>`<button data-act="tab" data-k="${k}" class="${f.tab===k?'on':''}">${t}</button>`).join('')}</div>
   <div class="row"><input class="inp" id="f-q" data-in="q" placeholder="Search by name or number…" value="${esc(f.q)}" style="flex:2;min-width:180px">
    <select class="inp" data-ch="f.status" id="f-st"><option value="">All statuses</option>${STATUSES.map(s=>`<option ${f.status===s.k?'selected':''}>${s.k}</option>`).join('')}</select>
@@ -1684,6 +1715,7 @@ const markDirty=el=>{const c=el&&el.closest&&el.closest('[data-sv]');if(c)c.clas
 const clearDirty=el=>{const c=el&&el.closest&&el.closest('[data-sv]');if(c)c.classList.remove('dirty')};
 document.addEventListener('input',e=>{
   const el=e.target;const k=el.dataset.in;markDirty(el);
+  if(el.id==='nc-phone'){clearTimeout(NC_T);NC_T=setTimeout(ncCheckDup,400);return}
   if(k==='q'){S.f.q=el.value;S.f.page=0;clearTimeout(qT);qT=setTimeout(loadView,350)}
   else if(k==='brand'){$('#br-pn').textContent=$('#br-name').value;$('#br-ps').textContent=$('#br-sub').value}
   else if(k==='rdq'){S.rd.q=el.value;clearTimeout(qT);qT=setTimeout(()=>{render();const i=$('#rd-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)}
@@ -1832,6 +1864,8 @@ document.addEventListener('click',async e=>{
     days.forEach(d=>rows.push([d,...people.map(({byDay})=>{const c=byDay[d];return c.state==='N'?'':[...c.entries.map(e=>logType(e.type).label+(e.note?': '+e.note:'')+(+e.deduction?' (-'+e.deduction+')':'')),...c.auto.map(k=>logType(k).label+' (system)')].join(' + ')})]));
     csvDownload('shifts-deductions-'+S.att.month+'.csv',rows)}
   // settings
+  else if(act==='nc-open')newClientModal();
+  else if(act==='nc-save')ncSave();
   else if(act==='course-new'){if(await guard(()=>Q(S.sb.from('courses').insert({name:'New course '+(S.courses.length+1)})),'Course added — rename it and save')){await loadRef();render()}}
   else if(act==='course-save'){const v={name:$('#co-n-'+id).value.trim(),price:$('#co-p-'+id).value===''?null:+$('#co-p-'+id).value,active:$('#co-a-'+id).checked};if(!v.name)return;if(await guard(()=>Q(S.sb.from('courses').update(v).eq('id',id)),'Saved ✓')){await loadRef();clearDirty(a)}}
   else if(act==='group-new'){if(!S.courses.length){toast('Add a course first');return}if(await guard(()=>Q(S.sb.from('groups').insert({course:S.courses[0].name,name:'Round '})),'Group added — fill it in and save')){await loadRef();render()}}
