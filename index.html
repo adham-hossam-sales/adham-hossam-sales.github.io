@@ -686,7 +686,7 @@ async function callModal(id){
     <div class="field"><label for="c-q">Qualified?</label><select class="inp" id="c-q"><option value="">Not set</option><option value="1">Qualified</option><option value="0">Not qualified</option></select></div></div>
    <div class="field"><label for="c-cm">Comment <i>*</i></label><textarea class="inp ar" dir="auto" id="c-cm" rows="3" placeholder="What did the client say?"></textarea></div>
    <div class="row"><div class="field" id="why-box" style="display:none"><label for="c-why">Why not interested? <i>*</i></label><select class="inp" id="c-why"><option value="">— Pick the reason —</option>${LOST.map(r=>`<option>${esc(r)}</option>`).join('')}</select></div>
-    <div class="field"><label for="c-fu">Next follow-up / call back</label><div class="row" style="gap:6px;flex-wrap:nowrap"><input type="date" class="inp" id="c-fu" min="${t}" value="${esc(l.follow_up||'')}"><input type="time" class="inp" id="c-fut" aria-label="Time" value="${l.follow_up_at?hhmm(l.follow_up_at):''}" style="max-width:130px"></div>
+    <div class="field"><label for="c-fu">Next follow-up / call back <i id="c-fu-req">*</i></label><div class="row" style="gap:6px;flex-wrap:nowrap"><input type="date" class="inp" id="c-fu" min="${t}" value="${esc(l.follow_up||'')}"><input type="time" class="inp" id="c-fut" aria-label="Time" value="${l.follow_up_at?hhmm(l.follow_up_at):''}" style="max-width:130px"></div>
      <div class="fuq">${[['h1','In 1 hour'],['h2','In 2 hours'],['ev','Today 7 PM'],['tm','Tomorrow 12 PM'],['x','Clear']].map(([k,v])=>`<button type="button" class="btn sm" data-act="fu-quick" data-k="${k}">${v}</button>`).join('')}</div>
      <div class="hint" id="c-fu-h">Pick a time and it pops up as a reminder when it comes. Same day is fine.</div></div></div>
    <div id="res-box" class="card" style="background:var(--bg);display:none"><h3 style="margin-bottom:10px">Reservation details</h3>
@@ -721,6 +721,7 @@ async function saveCall(id){
   const fd=$('#c-fu').value,ft=$('#c-fut').value;
   if(st==='Call Later'&&(!fd||!ft)){toast('Set the day and time to call back');$('#c-fut').focus();return}
   if(ft&&!fd){toast('Pick the day for the follow-up');return}
+  if(st&&!['Reserved','Not Interested'].includes(st)&&!fd){toast('Set the next follow-up day — it is required');$('#c-fu').focus();return}
   const fat=fd&&ft?new Date(fd+'T'+ft):null;
   if(fat&&fat<new Date(Date.now()-5*60000)&&(fat.toISOString()!==l.follow_up_at)){toast('That follow-up time has already passed');return}
   const why=st==='Not Interested'?$('#c-why').value:'';if(st==='Not Interested'&&!why){toast('Pick why the client is not interested');$('#c-why').focus();return}
@@ -1675,7 +1676,7 @@ document.addEventListener('change',async e=>{
     const fu=$('#c-fu');if(v==='Call Later'){if(!fu.value)fu.value=today();$('#c-fu-h').innerHTML='<b>When did the client ask you to call back?</b> Set the time, and the system reminds you then.';$('#c-fut').focus()}
     else if(['No Answer','Not Available','Send Details WP','Possible Lead'].includes(v)&&!fu.value)fu.value=addDays(today(),1);
     if(NO_REACH.includes(v))$('#c-fu-h').innerHTML='<b>Comes back tomorrow automatically</b> as a “↻ Call again” reminder. Change the day only if you agreed on another one.';
-    if(['Reserved','Not Interested'].includes(v))fu.value='';$('#why-box').style.display=v==='Not Interested'?'':'none';
+    if(['Reserved','Not Interested'].includes(v))fu.value='';$('#c-fu-req').style.display=['Reserved','Not Interested'].includes(v)?'none':'';$('#why-box').style.display=v==='Not Interested'?'':'none';
     $('#res-box').style.display=v==='Reserved'?'block':'none';return}
   if(el.dataset.actCh==='lg-type'){$('#lg-ded').value=el.selectedOptions[0].dataset.ded||0;return}
   if(el.dataset.actCh==='py-meth'){const l=$('#py-phone-l');if(l)l.innerHTML=el.value==='Bank transfer'?'Account / IBAN number <i>*</i>':el.value==='Cash'?'Phone number (optional)':el.value==='InstaPay'?'InstaPay number or address <i>*</i>':'Wallet number <i>*</i>';return}
