@@ -691,7 +691,7 @@ async function callModal(id){
      <div class="hint" id="c-fu-h">Pick a time and it pops up as a reminder when it comes. Same day is fine.</div></div></div>
    <div id="res-box" class="card" style="background:var(--bg);display:none"><h3 style="margin-bottom:10px">Reservation details</h3>
     <div class="row"><div class="field"><label for="r-course">Course</label><select class="inp" id="r-course" data-act-ch="r-course">${courseNames().map(c=>`<option ${c===l.course?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
-     <div class="field"><label for="r-group">Group / round</label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course,true)}</select>${isAdmin()?'<a href="#config" class="hint" data-act="close">+ Add a new group in Settings</a>':''}</div></div>
+     <div class="field"><label for="r-group">Round / group <i>*</i></label><select class="inp" id="r-group" data-act-ch="r-group">${groupOptions(l.course,true)}</select>${isAdmin()?'<a href="#config" class="hint" data-act="close">+ Add a new group in Settings</a>':''}</div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-att">Attendance</label><select class="inp" id="r-att"><option>Offline</option><option>Online</option></select></div>
      <div class="field"><label for="r-amt">Amount paid (EGP) <i>*</i></label><input class="inp num" type="number" min="0" id="r-amt" placeholder="${course&&course.price?course.price:''}"></div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-pay">Payment</label><select class="inp" id="r-pay"><option>Deposit</option><option>Full</option></select></div>
@@ -707,7 +707,7 @@ async function callModal(id){
 function groupOptions(course,withRounds){const gs=S.groups.filter(g=>g.active&&(!course||!g.course||g.course===course));
   const byR={};gs.forEach(g=>{const k=locKey(g.name);(byR[k]=byR[k]||[]).push(g)});const names=Object.keys(byR).sort((a,b)=>rnum(b)-rnum(a)||a.localeCompare(b));
   const gl=g=>[g.location,g.schedule].filter(Boolean).join(' · ')||g.name;
-  return `<option value="">${gs.length?'— Decide later —':'— No groups for this course yet —'}</option>${names.map(n=>`<optgroup label="${esc(n)}">${withRounds?`<option value="r:${esc(n)}">${esc(n)} · place not chosen yet</option>`:''}${byR[n].sort((a,b)=>gl(a).localeCompare(gl(b))).map(g=>{const st=seatOf(g);return `<option value="${g.id}" data-mode="${esc(g.mode||'')}" ${st.full?'disabled':''}>${esc(n)} · ${esc(gl(g))}${g.start_date?' · starts '+fmtDay(g.start_date):''}${st.full?' · FULL':st.cap?` · ${st.left} seat${st.left===1?'':'s'} left`:''}</option>`}).join('')}</optgroup>`).join('')}`}
+  return `<option value="">${gs.length?(withRounds?'— Pick the round —':'— Decide later —'):'— No groups for this course yet —'}</option>${names.map(n=>`<optgroup label="${esc(n)}">${withRounds?`<option value="r:${esc(n)}">${esc(n)} · place not chosen yet</option>`:''}${byR[n].sort((a,b)=>gl(a).localeCompare(gl(b))).map(g=>{const st=seatOf(g);return `<option value="${g.id}" data-mode="${esc(g.mode||'')}" ${st.full?'disabled':''}>${esc(n)} · ${esc(gl(g))}${g.start_date?' · starts '+fmtDay(g.start_date):''}${st.full?' · FULL':st.cap?` · ${st.left} seat${st.left===1?'':'s'} left`:''}</option>`}).join('')}</optgroup>`).join('')}`}
 async function saveCall(id){
   const l=S.modal?.lead;if(!l||l.id!==id)return;
   const st=$('#c-st').value,cm=$('#c-cm').value.trim(),mv=$('#c-mv')?.value;
@@ -715,6 +715,7 @@ async function saveCall(id){
   if(st&&!cm){toast('Add a comment about the call');return}
   let resv=null;
   if(st==='Reserved'){const amt=$('#r-amt').value;if(amt===''){toast('Enter the amount paid');return}
+    if(!$('#r-group').value&&$('#r-group').options.length>1){toast('Pick the round (the place can be chosen later)');$('#r-group').focus();return}
     resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,round_name:$('#r-group').value.startsWith('r:')?$('#r-group').value.slice(2):null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value,plan:$('#r-plan').value||null,paid_to:$('#r-to').value.trim()||null,email:$('#r-email').value.trim()||null};}
   const name=$('#c-name').value.trim()||l.name||'Unknown',city=$('#c-city').value||l.city||null;
   const fd=$('#c-fu').value,ft=$('#c-fut').value;
@@ -1543,7 +1544,7 @@ const AD=s=>String(s||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d
 const ph10=p=>{const d=AD(p).replace(/\D/g,'');return d.length>=9?d.slice(-10):''};
 const cliKey=(phone,name)=>ph10(phone)||('n:'+AR(name).replace(/\s+/g,' ').trim().toLowerCase());
 function abDate(e,r,round){
-  if(r&&r.created_at)return new Date(r.created_at);
+  if(r&&r.res_date)return parseD(r.res_date);if(r&&r.created_at)return new Date(r.created_at);
   const s=AD(e.booked_on||'').trim();if(!s)return null;
   let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return new Date(+m[1],m[2]-1,+m[3]);
   m=s.match(/^(\d{1,2})\s*[\/\\\-.]\s*(\d{1,2})(?:\s*[\/\\\-.]\s*(\d{2,4}))?/);if(!m)return null;
@@ -1558,7 +1559,7 @@ async function loadAgentBook(){
   rounds.sort((a,b)=>(a.status==='Closed')-(b.status==='Closed')||rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));
   if(!A.round||!rounds.some(r=>r.id===A.round)){const op=rounds.filter(r=>r.status!=='Closed'&&/^round/i.test(r.name));A.round=(op[0]||rounds[0]||{}).id||null}
   const [ents,res]=A.round?await Promise.all([all(()=>S.sb.from('round_entries').select('*').eq('round_id',A.round).order('id')),
-    all(()=>S.sb.from('reservations').select('id,code,client_name,phone,agent_id,status,created_at,round_name,group_id').order('created_at'))]):[[],[]];
+    all(()=>S.sb.from('reservations').select('id,code,client_name,phone,agent_id,status,created_at,res_date,round_name,group_id').order('created_at'))]):[[],[]];
   A.d={rounds,ents,res}}
 function agentBook(){
   const A=S.ab;if(!A||!A.d)return null;const {rounds,ents,res}=A.d;const round=rounds.find(r=>r.id===A.round);if(!round)return null;
@@ -1571,7 +1572,7 @@ function agentBook(){
     const sysAg=r?pname(r.agent_id):'';const m=!r&&(resByKey[k]||[]).find(x=>!linked.has(x.id));
     return {e,r,k,date:abDate(e,r,round),agent:agentName(e)==='—'&&sysAg?sysAg:agentName(e),src:r?'System':'Sheet',match:m||null,sysAg:r?sysAg:m?pname(m.agent_id):'',flags:[]}});
   // reservations booked for this round that never reached the sheet
-  roundRes.filter(r=>!linked.has(r.id)&&!rows.some(x=>x.match&&x.match.id===r.id)).forEach(r=>rows.push({e:{name:r.client_name,phone:r.phone,status:r.status==='Active'?'Active':r.status,location:r.group_id?groupName(r.group_id):''},r,k:cliKey(r.phone,r.client_name),date:new Date(r.created_at),agent:pname(r.agent_id)||'—',src:'System only',match:null,sysAg:pname(r.agent_id),flags:['In the system but not in the round sheet']}));
+  roundRes.filter(r=>!linked.has(r.id)&&!rows.some(x=>x.match&&x.match.id===r.id)).forEach(r=>rows.push({e:{name:r.client_name,phone:r.phone,status:r.status==='Active'?'Active':r.status,location:r.group_id?groupName(r.group_id):''},r,k:cliKey(r.phone,r.client_name),date:r.res_date?parseD(r.res_date):new Date(r.created_at),agent:pname(r.agent_id)||'—',src:'System only',match:null,sysAg:pname(r.agent_id),flags:['In the system but not in the round sheet']}));
   const byK={};rows.forEach(x=>(byK[x.k]=byK[x.k]||[]).push(x));
   rows.forEach(x=>{const same=byK[x.k];if(same.length>1){const others=same.filter(y=>y!==x);x.flags.push('Same client listed '+same.length+'× in this round'+(others.some(y=>AR(y.agent)!==AR(x.agent))?' (by '+[...new Set(same.map(y=>y.agent))].join(' / ')+')':''))}
     if(x.match)x.flags.push('Same client also booked in the system'+(x.match.code?' ('+x.match.code+')':''));
