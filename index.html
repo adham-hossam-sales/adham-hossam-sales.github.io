@@ -1218,18 +1218,38 @@ function readEntry(){const g=k=>{const el=$('#re-'+k);return el?el.value.trim():
   const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,location:locKey(g('location'))||null,group_id:matchGroup(rn,g('location')),status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
   if(!$('#re-name').disabled)Object.assign(v,{name:g('name')||null,phone:g('phone')||null,booked_on:g('booked_on')||null,deposit:g('deposit')===''?null:+g('deposit').replace(/[^\d.]/g,'')||null,received_on:g('received_on')||null,agent:g('agent')||null,location:locKey(g('location'))||null,plan:g('plan')||null});
   return v}
-function exportRoundXlsx(){
-  const D=S.d.rounds;const r=D.rounds.find(x=>x.id===S.rd.round);
-  const row=(e,i)=>({'#':i+1,'Booked':e.booked_on||'','Code':e.ref||'','Name':e.name||'','Mobile':e.phone||'','Paid':e.deposit??'','Paid to':e.received_on||'','Agent':e.agent||'','Group':e.location||'','Plan':e.plan||'','Notes':e.notes||'','Email':e.email||'','Status':e.status});
-  const sheet=rows=>{const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{}]);if(rows.length){const keys=Object.keys(rows[0]);ws['!cols']=keys.map(k=>({wch:Math.min(50,Math.max(k.length+2,...rows.map(x=>String(x[k]??'').length+2)))}));ws['!autofilter']={ref:ws['!ref']}}return ws};
-  const wb=XLSX.utils.book_new();const used=new Set();const nm=s=>{let n=String(s).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31).trim()||'Sheet';let k=n,i=2;while(used.has(k)){k=n.slice(0,28)+' '+i++}used.add(k);return k};
-  XLSX.utils.book_append_sheet(wb,sheet(D.ents.map(row)),nm(r.name));
+/* Excel export laid out like the round sheets: main tab with everyone coloured by status, then one tab per place
+   (attending on top, a gap, then those not attending). Colours: white attending, cyan deferred in, orange deferred out /
+   refunded, red withdrawn, dark green starts later. */
+const XCOL={'Active':null,'Deferred in':'00FFFF','Deferred out':'FF9900','Refunded':'FF9900','Withdrawn':'FF0000','Later start':'38761D'};
+let XLSXS=null;
+async function styledXlsx(){if(XLSXS)return XLSXS;const old=window.XLSX;try{await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';s.onload=res;s.onerror=rej;document.head.appendChild(s)});XLSXS=window.XLSX!==old?window.XLSX:null}catch(e){XLSXS=null}window.XLSX=old;return XLSXS}
+const AR_DIG=n=>String(n).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]);
+async function exportRoundXlsx(){
+  const D=S.d.rounds;const r=D.rounds.find(x=>x.id===S.rd.round);if(!r)return;toast('Preparing the Excel file…');
+  const X=await styledXlsx();const XL=X||XLSX;
+  /* people who started in this round and were deferred on: they now live in a later round, but the sheet keeps them here in orange */
+  let moved=[];const n=rnum(r.name);
+  if(n){const pats=['من راوند '+AR_DIG(n),'من راوند '+n,'من لراوند '+AR_DIG(n),'من round '+n,'من Round '+n,'تاجيل من راوند '+AR_DIG(n)];
+    try{const or=pats.map(p=>`notes.ilike.%${p}%`).join(',');const got=await all(()=>S.sb.from('round_entries').select('*').neq('round_id',r.id).or(or));
+      const later=new Map(D.rounds.map(x=>[x.id,x]));moved=got.filter(e=>{const rr=later.get(e.round_id);return !rr||!rnum(rr.name)||rnum(rr.name)>n}).map(e=>({...e,status:'Deferred out',notes:[e.notes,'→ '+((later.get(e.round_id)||{}).name||'later round')].filter(Boolean).join(' / ')}))}catch(e){moved=[]}}
+  const line=e=>[e.booked_on||'',e.ref||'',e.name||'',e.phone||'',e.deposit??'',e.received_on||'',e.agent||'',e.location||'',e.plan||'',e.notes||'',e.email||''];
+  const W=[8,7,26,14,8,16,16,24,14,48,28];
+  const build=list=>{const aoa=list.map(x=>x?line(x):[]);const ws=XL.utils.aoa_to_sheet(aoa.length?aoa:[[]]);ws['!cols']=W.map(w=>({wch:w}));
+    if(X)list.forEach((e,ri)=>{if(!e)return;const c=XCOL[e.status];for(let ci=0;ci<11;ci++){const a=XL.utils.encode_cell({r:ri,c:ci});if(!ws[a])ws[a]={t:'s',v:''};
+      ws[a].s={alignment:{horizontal:'right',readingOrder:2},border:{bottom:{style:'thin',color:{rgb:'D9D9D9'}}},...(c?{fill:{patternType:'solid',fgColor:{rgb:c}}}:{}),...(e.status==='Later start'?{font:{color:{rgb:'FFFFFF'}}}:{})}}});
+    return ws};
+  const wb=XL.utils.book_new();const used=new Set();const nm=s=>{let k0=String(s).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31).trim()||'Sheet';let k=k0,i=2;while(used.has(k)){k=k0.slice(0,28)+' '+i++}used.add(k);return k};
+  XL.utils.book_append_sheet(wb,build([...moved,...D.ents]),nm(r.name));
   const G=D.G||(D.G=roundGroups(D.ents,r.name));
-  G.tabs.forEach(t=>XLSX.utils.book_append_sheet(wb,sheet(D.ents.filter(e=>G.tabOf(e)===t.key).map(row)),nm(t.label)));
-  if(G.none.length)XLSX.utils.book_append_sheet(wb,sheet(G.none.map(row)),nm(NONE_LBL));
-  const st=[...G.tabs,...(G.none.length?[{key:'_none',label:NONE_LBL}]:[])].map(t=>{const es=t.key==='_none'?G.none:D.ents.filter(e=>G.tabOf(e)===t.key);const o={'Group':t.label,'In the round':es.filter(inRound).length};Object.keys(RST).forEach(s=>o[s]=es.filter(e=>e.status===s).length);o['Total']=es.length;return o});XLSX.utils.book_append_sheet(wb,sheet(st),nm('Summary'));
+  const block=es=>{const a=es.filter(inRound),b=es.filter(e=>!inRound(e));return b.length?[...a,null,null,null,...b]:a};
+  G.tabs.forEach(t=>XL.utils.book_append_sheet(wb,build(block(D.ents.filter(e=>G.tabOf(e)===t.key))),nm(t.label)));
+  if(G.none.length)XL.utils.book_append_sheet(wb,build(block(G.none)),nm(NONE_LBL));
+  const st=[...G.tabs,...(G.none.length?[{key:'_none',label:NONE_LBL}]:[])].map(t=>{const es=t.key==='_none'?G.none:D.ents.filter(e=>G.tabOf(e)===t.key);const o={'Group':t.label,'In the round':es.filter(inRound).length};Object.keys(RST).forEach(s=>o[s]=es.filter(e=>e.status===s).length);o['Total']=es.length;return o});
+  if(moved.length)st.push({'Group':'Deferred on to a later round (orange in the main tab)','In the round':0,'Total':moved.length});
+  const sws=XL.utils.json_to_sheet(st);sws['!cols']=Object.keys(st[0]||{}).map(k=>({wch:Math.max(12,k.length+2)}));sws['!cols'][0]={wch:40};XL.utils.book_append_sheet(wb,sws,nm('Summary'));
   wb.Workbook={Views:[{RTL:true}]};
-  XLSX.writeFile(wb,r.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓');
+  XL.writeFile(wb,r.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast(X?'Excel file downloaded ✓':'Excel file downloaded (colours could not load this time)');
 }
 /* --- import from Google Sheets (reads only; nothing is changed in the sheet) --- */
 function parseCSV(t){const rows=[];let row=[],f='',q=false;for(let i=0;i<t.length;i++){const c=t[i];
