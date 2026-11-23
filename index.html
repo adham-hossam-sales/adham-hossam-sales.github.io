@@ -177,6 +177,13 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .pc b.n{font-size:13px}.pc .st{font-weight:600}.pc .lg{font-size:11px;padding:2px 5px;margin:1px 0}
 .pc.d-N,.pc.d-F{border-color:var(--line)} .pc.blank{background:none;border:0}
 .pc.today{outline:2px solid var(--accent);outline-offset:-2px}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.rcard{text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;font:inherit;color:inherit}.rcard:hover{border-color:var(--accent)}
+.rnums{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.rnums div{background:var(--bg);border-radius:8px;padding:6px 8px}.rnums b{display:block;font-size:17px}.rnums span{font-size:11px;color:var(--muted)}
+.sheet-wrap{max-height:70vh;overflow:auto}.sheet{font-size:12.5px;min-width:1500px}.sheet th{position:sticky;top:0;z-index:1;background:var(--surface)}
+.sheet td{padding:6px 8px;vertical-align:top}.sheet td.c-notes{min-width:260px;max-width:380px}.sheet td.c-email{font-size:11.5px}.sheet td.c-name{font-weight:600;min-width:150px}
+.sheet td.c-location{min-width:170px}.rst{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.rlegend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}.rlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
 .pstats{display:flex;flex-wrap:wrap;gap:8px}.pstats div{background:var(--bg);border-radius:10px;padding:8px 12px;min-width:92px}.pstats b{display:block;font-size:18px}.pstats span{font-size:12px;color:var(--muted)}
 .cal td.nm a{color:inherit;text-decoration:underline dotted;cursor:pointer}
 [data-sv] .sv-flag{display:none} [data-sv].dirty .sv-flag{display:inline-flex}
@@ -223,7 +230,7 @@ const GROUPS=[['round','Round'],['station','Sales Station'],['interested','Inter
 const GR=Object.fromEntries(GROUPS);
 const GOVS=['Cairo','Giza','Alexandria','Qalyubia','Dakahlia','Sharqia','Gharbia','Monufia','Beheira','Kafr El Sheikh','Damietta','Port Said','Ismailia','Suez','Faiyum','Beni Suef','Minya','Asyut','Sohag','Qena','Luxor','Aswan','Red Sea','New Valley','Matrouh','North Sinai','South Sinai','Outside Egypt'];
 const GOV_AR={'القاهرة':'Cairo','القاهره':'Cairo','الجيزة':'Giza','الجيزه':'Giza','الإسكندرية':'Alexandria','الاسكندرية':'Alexandria','اسكندرية':'Alexandria','القليوبية':'Qalyubia','الدقهلية':'Dakahlia','الدقهليه':'Dakahlia','الشرقية':'Sharqia','الغربية':'Gharbia','المنوفية':'Monufia','البحيرة':'Beheira','كفر الشيخ':'Kafr El Sheikh','دمياط':'Damietta','بورسعيد':'Port Said','الإسماعيلية':'Ismailia','الاسماعيلية':'Ismailia','السويس':'Suez','الفيوم':'Faiyum','بني سويف':'Beni Suef','المنيا':'Minya','أسيوط':'Asyut','اسيوط':'Asyut','سوهاج':'Sohag','قنا':'Qena','الأقصر':'Luxor','الاقصر':'Luxor','أسوان':'Aswan','اسوان':'Aswan','البحر الأحمر':'Red Sea','الوادي الجديد':'New Valley','مطروح':'Matrouh','شمال سيناء':'North Sinai','جنوب سيناء':'South Sinai'};
-const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent'};
+const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent',ops:'Rounds (Operations)'};
 const RESULTS={passed:{t:'Passed',c:'green'},again:{t:'Come back again',c:'amber'},noshow:{t:'No-show',c:''},failed:{t:'Not a fit',c:'red'}};
 const ISTATUS={pending:{t:'Under review',c:'amber'},accepted:{t:'Accepted',c:'green'},rejected:{t:'Rejected',c:'red'}};
 const RSTATUS={Active:'green',Cancelled:'red',Refunded:'amber',Completed:'blue'};
@@ -346,7 +353,7 @@ async function enter(){
     if(!me){S.authMsg="This account doesn't have access to this system. Ask your admin to add you.";await S.sb.auth.signOut();S.booting=false;await checkAdmin();render();return}
     if(!me.active){S.authMsg='Your account has been deactivated. Contact your admin.';await S.sb.auth.signOut();S.booting=false;render();return}
     S.me=me;await loadRef();S.me=S.profiles[uid]||me;
-    const h=location.hash.slice(1);S.view=h||(me.role==='agent'?'leads':'dashboard');
+    const h=location.hash.slice(1);S.view=h||(me.role==='agent'?'leads':me.role==='ops'?'rounds':'dashboard');
   }catch(e){console.error(e);S.authMsg=errMsg(e)}
   S.booting=false;render();loadView();
 }
@@ -382,9 +389,10 @@ function view(){
   if(!S.sb||S.booting)return `<div class="center"><div class="card">${brandHead()}<p class="hint"><span class="spin"></span> Loading…</p></div></div>`;
   if(!S.me)return authView();
   const me=S.me;
-  const navs=me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
+  const navs=me.role==='ops'?[['rounds','Rounds']]:me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
     me.role==='tl'?[['dashboard','Dashboard'],['leads','Team Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions']]:
-    [['dashboard','Dashboard'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
+    [['dashboard','Dashboard'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['rounds','Rounds'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
+  if(me.role!=='admin'&&me.role!=='ops'&&me.rounds_access)navs.push(['rounds','Rounds']);
   if(!navs.find(n=>n[0]===S.view))S.view=navs[0][0];
   const showPeriod=['dashboard','leads','reservations'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
@@ -395,7 +403,7 @@ function view(){
    <div class="top"><button class="btn sm menu-btn" data-act="menu" aria-label="Menu">☰</button>
     ${showPeriod?`<select class="inp" id="period" data-ch="period" aria-label="Period">${PERIODS.map(([k,t])=>`<option value="${k}" ${S.period===k?'selected':''}>${t}</option>`).join('')}</select>`:''}
     <div class="sp"></div>${S.loading?'<span class="spin" aria-label="Loading"></span>':''}<button class="btn sm" data-act="refresh">Refresh</button></div>
-   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView}[S.view]||dashView)()}</div>
+   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView}[S.view]||dashView)()}</div>
   </div></div>`;
 }
 function authView(){
@@ -415,8 +423,8 @@ function authView(){
   </div></div>`;
 }
 async function loadView(){
-  if(!S.me)return;S.loading=true;render();
-  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam}[S.view];if(fn)await fn()}
+  if(!S.me)return;if(S.me.role==='ops')S.view='rounds';if(S.view==='rounds'&&!hasRounds())S.view='dashboard';S.loading=true;render();
+  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam,rounds:loadRounds}[S.view];if(fn)await fn()}
   catch(e){console.error(e);toast(errMsg(e))}
   S.loading=false;render();
 }
@@ -632,6 +640,9 @@ async function callModal(id){
      <div class="field"><label for="r-amt">Amount paid (EGP) <i>*</i></label><input class="inp num" type="number" min="0" id="r-amt" placeholder="${course&&course.price?course.price:''}"></div></div>
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-pay">Payment</label><select class="inp" id="r-pay"><option>Deposit</option><option>Full</option></select></div>
      <div class="field"><label for="r-meth">Method</label><select class="inp" id="r-meth">${METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div></div>
+    <div class="row" style="margin-top:8px"><div class="field"><label for="r-plan">Plan</label><select class="inp" id="r-plan"><option value="">—</option><option value="كاش">Cash (كاش)</option><option value="قسط">Installments (قسط)</option></select></div>
+     <div class="field"><label for="r-to">Paid to (wallet / InstaPay number)</label><input class="inp" id="r-to" placeholder="01080316147 / ادهم"></div></div>
+    <div class="field" style="margin-top:8px"><label for="r-email">Client email</label><input class="inp" id="r-email" type="email" placeholder="name@gmail.com"></div>
     ${course&&course.price?`<div class="hint" style="margin-top:6px">Course price: ${egp(course.price)}</div>`:''}</div>
    ${mgr?`<div class="field"><label for="c-mv">Reassign to another agent</label><select class="inp ar" id="c-mv"><option value="">— Keep with ${esc(pname(l.agent_id))} —</option>${myAgents().filter(a=>a.id!==l.agent_id).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>`:''}
    <details><summary style="cursor:pointer;font-weight:600">History (${F.events.length})</summary><div class="timeline" style="margin-top:8px;max-height:260px;overflow:auto">${F.events.slice().reverse().map(eventLine).join('')}</div></details>
@@ -645,7 +656,7 @@ async function saveCall(id){
   if(st&&!cm){toast('Add a comment about the call');return}
   let resv=null;
   if(st==='Reserved'){const amt=$('#r-amt').value;if(amt===''){toast('Enter the amount paid');return}
-    resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value};}
+    resv={course:$('#r-course').value,group_id:+$('#r-group').value||null,attendance:$('#r-att').value,amount:+amt,payment:$('#r-pay').value,method:$('#r-meth').value,plan:$('#r-plan').value||null,paid_to:$('#r-to').value.trim()||null,email:$('#r-email').value.trim()||null};}
   const name=$('#c-name').value.trim()||l.name||'Unknown',city=$('#c-city').value||l.city||null;
   const patch={name,city,interest_group:$('#c-gr').value||null,follow_up:$('#c-fu').value||null};
   if(st){const qv=$('#c-q').value;patch.status=st;patch.qualified=qv===''?l.qualified:qv==='1';patch.last_call_at=nowISO();patch.calls_count=(l.calls_count||0)+1;
@@ -801,6 +812,7 @@ function groupClientsModal(id){
 async function loadReports(){
   const me=S.me;
   if(me.role==='agent'){S.d.reports={mine:await Q(S.sb.from('daily_reports').select('*').eq('agent_id',me.id).order('report_date',{ascending:false}).limit(60))};return}
+  if(S.rf.tab==='team'){S.d.reports={mgr:await loadMgrReports()};return}
   if(S.rf.tab==='sum'){const [from,to]=periodRange();S.d.reports={sum:await all(()=>S.sb.from('daily_reports').select('*').gte('report_date',from).lte('report_date',to).order('report_date'))};return}
   const d=S.rf.date||today();
   const [day,mine]=await Promise.all([Q(S.sb.from('daily_reports').select('*').eq('report_date',d)),me.role==='tl'?Q(S.sb.from('daily_reports').select('*').eq('agent_id',me.id).order('report_date',{ascending:false}).limit(30)):Promise.resolve([])]);
@@ -816,9 +828,10 @@ function reportsView(){
     ${repTable(mine,false)}`;
   }
   const head=`<div class="head"><div><h1>Daily Reports</h1><div class="sub">Every agent's daily report, as soon as they save it</div></div><div class="sp"></div>
-   <div class="tabs"><button data-act="rtab" data-k="daily" class="${S.rf.tab==='daily'?'on':''}">By day</button><button data-act="rtab" data-k="sum" class="${S.rf.tab==='sum'?'on':''}">Period summary</button>${me.role==='tl'?'<button data-act="rtab" data-k="mine" class="'+(S.rf.tab==='mine'?'on':'')+'">My reports</button>':''}</div></div>`;
+   <div class="tabs"><button data-act="rtab" data-k="daily" class="${S.rf.tab==='daily'?'on':''}">By day</button><button data-act="rtab" data-k="sum" class="${S.rf.tab==='sum'?'on':''}">Period summary</button><button data-act="rtab" data-k="team" class="${S.rf.tab==='team'?'on':''}">${me.role==='tl'?'My team report':'Leader reports'}</button>${me.role==='tl'?'<button data-act="rtab" data-k="mine" class="'+(S.rf.tab==='mine'?'on':'')+'">My reports</button>':''}</div></div>`;
   if(!R)return head+'<div class="empty"><span class="spin"></span></div>';
   if(S.rf.tab==='mine')return head+`<div>${addBtn}</div>`+repTable(R.mine,false);
+  if(S.rf.tab==='team')return head+mgrReportsHtml(R.mgr);
   if(S.rf.tab==='sum'){const [from,to]=periodRange();const days=daysBetween(from,to);
     const rows=myAgents().map(a=>{const s={n:0,received:0,no_answer:0,want_wp:0,qualified:0,not_qualified:0,reservations:0,ck:0};(R.sum||[]).filter(r=>r.agent_id===a.id).forEach(r=>{s.n++;['received','no_answer','want_wp','qualified','not_qualified','reservations'].forEach(k=>s[k]+=r[k]||0);s.ck+=Object.values(r.checklist||{}).filter(Boolean).length/((r.checklist_items||list).length||1)});return {a,s}});
     return head+`<div class="row"><div class="sp"></div><button class="btn" data-act="rep-csv">Export CSV</button></div><div class="tbl-wrap"><table class="cards"><thead><tr><th>Agent</th><th>Reports</th><th>Leads in</th><th>No answer</th><th>WhatsApp</th><th>Qualified</th><th>Not qualified</th><th>Reservations</th><th>Avg checklist</th></tr></thead><tbody>
@@ -978,6 +991,240 @@ function exportInternsXlsx(){
   XLSX.writeFile(wb,'interviews-'+today()+'.xlsx');toast('Excel file downloaded ✓');
 }
 
+/* ================= rounds (private sheets) ================= */
+const hasRounds=()=>!!S.me&&S.me.active!==false&&(S.me.role==='admin'||S.me.role==='ops'||!!S.me.rounds_access);
+const RST={'Active':{t:'Active',bg:'',bd:'transparent'},'Deferred in':{t:'Deferred in (from an earlier round)',bg:'#e0f9fb',bd:'#06b6d4'},
+  'Deferred out':{t:'Deferred out (to a later round)',bg:'#ffedd5',bd:'#f97316'},'Withdrawn':{t:'Withdrawn',bg:'#fee2e2',bd:'#ef4444'},'Later start':{t:'Starts later (new month)',bg:'#dcfce7',bd:'#16a34a'}};
+const REGIONS=['Cairo','Alex','Online','Other'];
+const RCOLS=[['booked_on','Booked'],['ref','Code'],['name','Name'],['phone','Mobile'],['deposit','Paid'],['received_on','Paid to'],['agent','Agent'],['location','Group'],['plan','Plan'],['notes','Notes'],['email','Email'],['status','Status']];
+const rnum=n=>{const m=String(n||'').match(/\d+/);return m?+m[0]:0};
+const digits=s=>String(s||'').replace(/\D/g,'').slice(-10);
+const locKey=s=>String(s||'').replace(/\s+/g,' ').trim();
+async function loadRounds(){
+  if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:''};
+  const [rounds,ents]=await Promise.all([Q(S.sb.from('rounds').select('*')),S.rd.round?all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id')):all(()=>S.sb.from('round_entries').select('round_id,status,location'))]);
+  rounds.sort((a,b)=>(a.status==='Closed')-(b.status==='Closed')||rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));
+  S.d.rounds={rounds,ents};
+}
+function roundsView(){
+  const D=S.d.rounds;if(!D)return '<div class="empty"><span class="spin"></span></div>';
+  return S.rd.round?roundSheetView(D):roundsListView(D);
+}
+function roundsListView(D){
+  const cnt={};D.ents.forEach(e=>{const c=cnt[e.round_id]=cnt[e.round_id]||{n:0,locs:new Set()};c.n++;c[e.status]=(c[e.status]||0)+1;if(e.location)c.locs.add(locKey(e.location))});
+  const list=D.rounds.filter(r=>!S.rd.region||r.region===S.rd.region);
+  return `<div class="head"><div><h1>Rounds</h1><div class="sub">Private: only admins and people with Rounds access can open this page. Every reservation that is put in a group lands in its round here automatically.</div></div><div class="sp"></div>
+   <button class="btn" data-act="rd-import">Import from Google Sheets</button><button class="btn pri" data-act="rd-new">+ New round</button></div>
+  <div class="tabs"><button data-act="rd-region" data-k="" class="${!S.rd.region?'on':''}">All</button>${REGIONS.map(g=>`<button data-act="rd-region" data-k="${g}" class="${S.rd.region===g?'on':''}">${g}</button>`).join('')}</div>
+  <div class="rgrid">${list.map(r=>{const c=cnt[r.id]||{n:0,locs:new Set()};const act=c.n-(c['Withdrawn']||0)-(c['Deferred out']||0);
+   return `<button class="card rcard" data-act="rd-open" data-id="${r.id}"><div class="row"><h2>${esc(r.name)}</h2><div class="sp"></div><span class="pill ${r.status==='Closed'?'':'green'}">${esc(r.status)}</span></div>
+    <div class="hint">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${c.locs.size} group${c.locs.size===1?'':'s'}</div>
+    <div class="rnums"><div><b>${act}</b><span>In the round</span></div><div><b>${c['Deferred in']||0}</b><span>Deferred in</span></div><div><b>${c['Deferred out']||0}</b><span>Deferred out</span></div><div><b>${c['Withdrawn']||0}</b><span>Withdrawn</span></div></div></button>`}).join('')||'<div class="empty">No rounds yet. Create one, or put a reservation in a group and its round appears here.</div>'}</div>`;
+}
+function roundRows(D){
+  const q=S.rd.q.trim().toLowerCase();
+  return D.ents.filter(e=>(S.rd.tab==='all'||(S.rd.tab==='_none'?!locKey(e.location):locKey(e.location)===S.rd.tab))&&(!S.rd.st||e.status===S.rd.st)
+    &&(!q||[e.name,e.phone,e.email,e.notes,e.agent,e.ref,e.received_on].some(v=>String(v||'').toLowerCase().includes(q))));
+}
+function roundSheetView(D){
+  const r=D.rounds.find(x=>x.id===S.rd.round);if(!r){S.rd.round=null;return roundsListView({...D,ents:[]})}
+  const locs={};let none=0;D.ents.forEach(e=>{const k=locKey(e.location);if(k)locs[k]=(locs[k]||0)+1;else none++});
+  const tabs=Object.entries(locs).sort((a,b)=>b[1]-a[1]);
+  const rows=roundRows(D);const sc={};D.ents.forEach(e=>sc[e.status]=(sc[e.status]||0)+1);
+  const cell=(e,k)=>{const v=e[k];if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
+  return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · ${plural(D.ents.length,'student')} · ${esc(r.status)}</div></div><div class="sp"></div>
+   <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
+  <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All · ${D.ents.length}</button>${tabs.map(([k,n])=>`<button data-act="rd-tab" data-k="${esc(k)}" class="ar ${S.rd.tab===k?'on':''}">${esc(k)} · ${n}</button>`).join('')}${none?`<button data-act="rd-tab" data-k="_none" class="${S.rd.tab==='_none'?'on':''}">No group yet · ${none}</button>`:''}</div>
+  <div class="row"><input class="inp" data-in="rdq" id="rd-q" placeholder="Search name, mobile, email, notes…" value="${esc(S.rd.q)}" style="max-width:320px">
+   <select class="inp" data-ch="rd-st" id="rd-st" style="max-width:260px"><option value="">All statuses</option>${Object.keys(RST).map(s=>`<option value="${s}" ${S.rd.st===s?'selected':''}>${s} · ${sc[s]||0}</option>`).join('')}</select>
+   <div class="sp"></div><div class="rlegend">${Object.entries(RST).filter(([k])=>k!=='Active').map(([k,v])=>`<span><i style="background:${v.bd}"></i>${esc(k)}</span>`).join('')}</div></div>
+  <div class="tbl-wrap sheet-wrap"><table class="sheet"><thead><tr><th>#</th>${RCOLS.map(([,t])=>`<th>${t}</th>`).join('')}</tr></thead><tbody>
+  ${rows.map((e,i)=>`<tr class="click" data-act="rd-entry" data-id="${e.id}" style="${RST[e.status]?.bg?'background:'+RST[e.status].bg+';':''}box-shadow:inset 4px 0 0 ${RST[e.status]?.bd||'transparent'}"><td class="n">${i+1}${e.reservation_id?' <span class="pill accent" title="Added automatically from a reservation">auto</span>':''}</td>${RCOLS.map(([k])=>`<td class="${['name','agent','location','notes','plan','received_on'].includes(k)?'ar':''} c-${k}" dir="auto">${cell(e,k)}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${RCOLS.length+1}" class="empty">No students here${S.rd.q||S.rd.st?' match the filters':''}</td></tr>`}
+  </tbody></table></div>`;
+}
+function roundModal(id){
+  const r=id?S.d.rounds.rounds.find(x=>x.id===id):{region:'Cairo',status:'Open'};S.modal={type:'round',id};
+  openModal(`${mhead(id?'Round settings':'New round')}<div class="mb">
+   <div class="row"><div class="field"><label for="ro-name">Name <i>*</i></label><input class="inp" id="ro-name" value="${esc(r.name||'')}" placeholder="Round 43" autofocus></div>
+    <div class="field"><label for="ro-region">Region</label><select class="inp" id="ro-region">${REGIONS.map(g=>`<option ${r.region===g?'selected':''}>${g}</option>`).join('')}</select></div></div>
+   <div class="row"><div class="field"><label for="ro-course">Course</label><select class="inp" id="ro-course"><option value="">—</option>${courseNames().map(c=>`<option ${r.course===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    <div class="field"><label for="ro-status">Status</label><select class="inp" id="ro-status">${['Open','Closed'].map(s=>`<option ${r.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
+   <div class="field"><label for="ro-notes">Notes</label><input class="inp ar" dir="auto" id="ro-notes" value="${esc(r.notes||'')}"></div>
+   <div class="hint">A group in Settings whose name is exactly the same as this round (for example "Round 43") sends its reservations here.</div>
+  </div><div class="mf"><button class="btn pri" data-act="rd-save-round">Save</button>${id&&isAdmin()?`<button class="btn bad" data-act="rd-del-round" data-id="${id}">Delete round</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`);
+}
+function entryModal(id){
+  const D=S.d.rounds;const e=id?D.ents.find(x=>x.id===id):{status:'Active',location:S.rd.tab!=='all'&&S.rd.tab!=='_none'?S.rd.tab:''};const auto=!!e.reservation_id;
+  const round=D.rounds.find(r=>r.id===S.rd.round);
+  const locs=[...new Set(D.ents.map(x=>locKey(x.location)).filter(Boolean).concat(S.groups.filter(g=>g.name===round.name).map(g=>locKey((g.location||'')+' '+(g.schedule||'')))))];
+  S.modal={type:'rentry',id};
+  const f=(k,t,cls='')=>`<div class="field"><label for="re-${k}">${t}</label><input class="inp ${cls}" dir="auto" id="re-${k}" value="${esc(e[k]??'')}" ${auto&&!['notes','email','ref'].includes(k)?'disabled':''} ${k==='location'?'list="re-locs"':''}></div>`;
+  openModal(`${mhead(id?'<span class="ar">'+esc(e.name||'Student')+'</span>':'Add student to '+esc(round.name))}<div class="mb">
+   ${auto?`<div class="note">Added automatically from reservation <b>${esc(e.ref||'')}</b>. Name, mobile, paid amount, agent, group and plan follow the reservation. You can change the status, notes and email here.</div>`:''}
+   <div class="row">${f('name','Name','ar')}${f('phone','Mobile')}</div>
+   <div class="row">${f('booked_on','Booked on (d/m)')}${f('ref','Code')}${f('deposit','Paid (EGP)')}</div>
+   <div class="row">${f('received_on','Paid to (VC / InstaPay number)','ar')}${f('agent','Agent','ar')}</div>
+   <div class="row">${f('location','Group (place, day, time)','ar')}${f('plan','Plan (cash / installments + price)','ar')}</div>
+   <datalist id="re-locs">${locs.map(l=>`<option value="${esc(l)}">`).join('')}</datalist>
+   <div class="row">${f('email','Email')}<div class="field"><label for="re-status">Status</label><select class="inp" id="re-status">${Object.keys(RST).map(s=>`<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
+   <div class="field"><label for="re-notes">Notes</label><textarea class="inp ar" dir="auto" id="re-notes" rows="3">${esc(e.notes||'')}</textarea></div>
+   ${id?`<div class="card" style="background:var(--bg)"><h3 style="margin-bottom:8px">Defer to another round</h3><div class="row"><select class="inp" id="re-to" style="flex:1"><option value="">— Pick the round —</option>${D.rounds.filter(r=>r.id!==S.rd.round).map(r=>`<option value="${r.id}">${esc(r.name)} · ${esc(r.region)}</option>`).join('')}</select><button class="btn" data-act="rd-defer" data-id="${id}">Defer</button></div>
+    <div class="hint">Marks this row "Deferred out" here and adds the student to the other round as "Deferred in", with a note on both.</div></div>`:''}
+  </div><div class="mf"><button class="btn pri" data-act="rd-save-entry">Save</button>${id?`<button class="btn bad" data-act="rd-del-entry" data-id="${id}">Delete row</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`,true);
+}
+function readEntry(){const g=k=>{const el=$('#re-'+k);return el?el.value.trim():''};
+  const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
+  if(!$('#re-name').disabled)Object.assign(v,{name:g('name')||null,phone:g('phone')||null,booked_on:g('booked_on')||null,deposit:g('deposit')===''?null:+g('deposit').replace(/[^\d.]/g,'')||null,received_on:g('received_on')||null,agent:g('agent')||null,location:locKey(g('location'))||null,plan:g('plan')||null});
+  return v}
+function exportRoundXlsx(){
+  const D=S.d.rounds;const r=D.rounds.find(x=>x.id===S.rd.round);
+  const row=(e,i)=>({'#':i+1,'Booked':e.booked_on||'','Code':e.ref||'','Name':e.name||'','Mobile':e.phone||'','Paid':e.deposit??'','Paid to':e.received_on||'','Agent':e.agent||'','Group':e.location||'','Plan':e.plan||'','Notes':e.notes||'','Email':e.email||'','Status':e.status});
+  const sheet=rows=>{const ws=XLSX.utils.json_to_sheet(rows.length?rows:[{}]);if(rows.length){const keys=Object.keys(rows[0]);ws['!cols']=keys.map(k=>({wch:Math.min(50,Math.max(k.length+2,...rows.map(x=>String(x[k]??'').length+2)))}));ws['!autofilter']={ref:ws['!ref']}}return ws};
+  const wb=XLSX.utils.book_new();const used=new Set();const nm=s=>{let n=String(s).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31).trim()||'Sheet';let k=n,i=2;while(used.has(k)){k=n.slice(0,28)+' '+i++}used.add(k);return k};
+  XLSX.utils.book_append_sheet(wb,sheet(D.ents.map(row)),nm(r.name));
+  const locs={};D.ents.forEach(e=>{const k=locKey(e.location)||'No group yet';(locs[k]=locs[k]||[]).push(e)});
+  Object.entries(locs).sort((a,b)=>b[1].length-a[1].length).forEach(([k,es])=>XLSX.utils.book_append_sheet(wb,sheet(es.map(row)),nm(k)));
+  const st=Object.keys(RST).map(s=>({'Status':s,'Meaning':RST[s].t,'Students':D.ents.filter(e=>e.status===s).length}));XLSX.utils.book_append_sheet(wb,sheet(st),nm('Summary'));
+  wb.Workbook={Views:[{RTL:true}]};
+  XLSX.writeFile(wb,r.name.replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'-'+today()+'.xlsx');toast('Excel file downloaded ✓');
+}
+/* --- import from Google Sheets (reads only; nothing is changed in the sheet) --- */
+function parseCSV(t){const rows=[];let row=[],f='',q=false;for(let i=0;i<t.length;i++){const c=t[i];
+  if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+  else if(c==='"')q=true;else if(c===','){row.push(f);f=''}else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;row.push(f);rows.push(row);row=[];f=''}else f+=c}
+  if(f!==''||row.length){row.push(f);rows.push(row)}return rows}
+const clean=s=>String(s??'').replace(/[‎‏‪-‮]/g,'').replace(/\s+/g,' ').trim();
+function sheetLayout(rows){const data=rows.filter(r=>r.some(c=>clean(c)));const sample=data.slice(0,25);
+  const isPhone=s=>digits(s).length>=9;const ph3=sample.filter(r=>isPhone(r[3])).length,ph1=sample.filter(r=>isPhone(r[1])).length;
+  if(ph3>=ph1)return 'std';const num2=sample.filter(r=>/^\d+$/.test(clean(r[2]))).length;return num2>sample.length/2?'virtual':'ads'}
+function rowToEntry(r,layout){const c=i=>clean(r[i]);let e;
+  if(layout==='std')e={booked_on:c(0),ref:c(1),name:c(2),phone:c(3),deposit:c(4),received_on:c(5),agent:c(6),location:c(7),plan:c(8),notes:c(9),email:c(10),extra:r.slice(11).map(clean).filter(Boolean).join(' / ')};
+  else if(layout==='virtual')e={name:c(0),phone:c(1),deposit:c(2),agent:c(3),location:c(4),plan:c(5),notes:c(6),extra:r.slice(7).map(clean).filter(Boolean).join(' / ')};
+  else e={name:c(0),phone:c(1),agent:c(2),received_on:c(3),deposit:c(4),plan:c(5),notes:c(6),email:c(7),extra:r.slice(8).map(clean).filter(Boolean).join(' / ')};
+  if(!e.name&&!digits(e.phone))return null;
+  if(e.extra)e.notes=[e.notes,e.extra].filter(Boolean).join(' / ');delete e.extra;
+  const dep=String(e.deposit||'').replace(/[^\d.]/g,'');e.deposit=dep===''?null:+dep;
+  if(digits(e.phone).length===10&&/^1/.test(digits(e.phone))&&!/^0/.test(e.phone))e.phone='0'+e.phone;
+  Object.keys(e).forEach(k=>{if(e[k]==='')e[k]=null});return e}
+function guessStatus(notes){const n=String(notes||'');if(/سحب/.test(n))return 'Withdrawn';if(/تأجيل ل|تاجيل ل|لراوند/.test(n))return 'Deferred out';if(/من راوند|مأجل|مؤجل/.test(n))return 'Deferred in';return 'Active'}
+async function fetchSheetTab(url){const id=(String(url).match(/\/d\/([\w-]+)/)||[])[1];const gid=(String(url).match(/[#&?]gid=(\d+)/)||[])[1]||'0';
+  if(!id)throw new Error('That does not look like a Google Sheets link');
+  const r=await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`);if(!r.ok)throw new Error('Could not open the sheet. Make sure "Anyone with the link" can view it.');
+  const t=await r.text();if(/^\s*<!DOCTYPE|<html/i.test(t.slice(0,200)))throw new Error('Could not read the sheet. Make sure "Anyone with the link" can view it.');return parseCSV(t)}
+async function ensureRound(name,region){name=name.trim();let r=(await Q(S.sb.from('rounds').select('*').eq('name',name).maybeSingle()));
+  if(!r)r=await Q(S.sb.from('rounds').insert({name,region:region||'Cairo'}).select('*').single());return r}
+async function importRows(roundName,region,rows,opts={}){
+  const layout=opts.layout||sheetLayout(rows);const r=await ensureRound(roundName,region);
+  const have=await all(()=>S.sb.from('round_entries').select('id,phone,name,location').eq('round_id',r.id));
+  const byKey=new Map(have.map(x=>[digits(x.phone)||('n:'+x.name),x]));const out=[];const fill=[];let skip=0;
+  rows.forEach(raw=>{const e=rowToEntry(raw,layout);if(!e)return;const k=digits(e.phone)||('n:'+e.name);const h=byKey.get(k);
+    if(h){skip++;const loc=locKey(e.location)||opts.fillLocation;if(!h.location&&loc&&h.id){h.location=loc;fill.push(h)}return}
+    if(!e.location&&opts.fillLocation)e.location=opts.fillLocation;e.location=e.location?locKey(e.location):null;
+    e.status=(opts.statusMap&&opts.statusMap[digits(e.phone)])||guessStatus(e.notes);const row={...e,round_id:r.id,source:'sheet',sort:have.length+out.length+1,updated_by:S.me.id};out.push(row);byKey.set(k,row)});
+  for(let i=0;i<out.length;i+=200)await Q(S.sb.from('round_entries').insert(out.slice(i,i+200)));
+  for(const h of fill)await Q(S.sb.from('round_entries').update({location:h.location}).eq('id',h.id));
+  return {round:r,added:out.length,skipped:skip,layout}}
+function importModal(){
+  S.modal={type:'rimport'};const D=S.d.rounds;
+  openModal(`${mhead('Import a round from Google Sheets')}<div class="mb">
+   <div class="note">This only reads the sheet. Nothing in the Google Sheet is changed. People already in the round (same mobile) are skipped, so you can import again safely.</div>
+   <div class="field"><label for="im-url">Link to the tab <i>*</i></label><input class="inp" id="im-url" placeholder="https://docs.google.com/spreadsheets/d/…/edit#gid=…" value="${esc(setting('rounds_sheet_url','')||'')}"><div class="hint">Open the tab in Google Sheets and copy the address bar, so the link ends with #gid=… . The sheet must be shared as "Anyone with the link can view".</div></div>
+   <div class="row"><div class="field"><label for="im-round">Into round <i>*</i></label><input class="inp" id="im-round" list="im-rounds" placeholder="Round 42"><datalist id="im-rounds">${D.rounds.map(r=>`<option value="${esc(r.name)}">`).join('')}</datalist></div>
+    <div class="field"><label for="im-region">Region (new round only)</label><select class="inp" id="im-region">${REGIONS.map(g=>`<option>${g}</option>`).join('')}</select></div></div>
+   <div class="field"><label for="im-loc">If a row has no group, put it in (optional)</label><input class="inp ar" dir="auto" id="im-loc" placeholder="for a location tab, for example: الدقى السبت الساعة ٢"></div>
+   <div id="im-prev"></div>
+  </div><div class="mf"><button class="btn pri" data-act="rd-import-go">Import</button><button class="btn" data-act="close">Cancel</button></div>`,true);
+}
+
+/* ================= team leader / admin reports ================= */
+async function teamNumbers(d,ids){
+  if(!ids.length)return [];
+  const [ev,leads,res,pays,reps]=await Promise.all([
+    all(()=>S.sb.from('lead_events').select('lead_id,by,type,status,data').in('by',ids).in('type',['call','reserved']).gte('at',startISO(d)).lt('at',endISO(d))),
+    all(()=>S.sb.from('leads').select('agent_id').in('agent_id',ids).gte('assigned_at',startISO(d)).lt('assigned_at',endISO(d))),
+    all(()=>S.sb.from('reservations').select('agent_id,status').in('agent_id',ids).eq('res_date',d)),
+    all(()=>S.sb.from('reservation_payments').select('kind,amount,reservations!inner(agent_id)').eq('pay_date',d).in('reservations.agent_id',ids)),
+    Q(S.sb.from('daily_reports').select('agent_id,created_at').in('agent_id',ids).eq('report_date',d))]);
+  return ids.map(id=>{const calls=ev.filter(e=>e.by===id&&e.type==='call');const leadsCalled=new Set(calls.map(c=>c.lead_id));
+    const money=pays.filter(p=>p.reservations&&p.reservations.agent_id===id).reduce((s,p)=>s+(p.kind==='refund'?-1:1)*(+p.amount||0),0);const rep=reps.find(r=>r.agent_id===id);
+    return {id,name:pname(id),assigned:leads.filter(l=>l.agent_id===id).length,calls:calls.length,people:leadsCalled.size,reached:calls.filter(c=>!NO_REACH.includes(c.status)).length,
+      qualified:calls.filter(c=>c.data&&c.data.qualified===true).length,reservations:res.filter(r=>r.agent_id===id&&r.status!=='Cancelled').length,collected:money,report:rep?fmtTime(rep.created_at):''}})}
+function teamTable(team){
+  if(!team||!team.length)return '<div class="hint">No team members.</div>';
+  const t={assigned:0,calls:0,people:0,reached:0,qualified:0,reservations:0,collected:0};team.forEach(r=>Object.keys(t).forEach(k=>t[k]+=r[k]||0));
+  return `<div class="tbl-wrap"><table class="cards"><thead><tr><th>Agent</th><th>Leads given</th><th>Calls</th><th>People called</th><th>Reached</th><th>Qualified</th><th>Reservations</th><th>Collected</th><th>Daily report</th></tr></thead><tbody>
+   ${team.map(r=>`<tr><td data-l="Agent"><b class="ar">${esc(r.name)}</b></td><td class="n" data-l="Leads given">${r.assigned}</td><td class="n" data-l="Calls">${r.calls}</td><td class="n" data-l="People called">${r.people}</td><td class="n" data-l="Reached">${r.reached}</td><td class="n" data-l="Qualified">${r.qualified}</td><td class="n" data-l="Reservations"><b>${r.reservations}</b></td><td class="n" data-l="Collected">${egp(r.collected)}</td><td data-l="Daily report">${r.report?`<span class="pill green">Added ${esc(r.report)}</span>`:'<span class="pill red">Not added</span>'}</td></tr>`).join('')}
+   <tr style="font-weight:700"><td>Team total</td><td class="n">${t.assigned}</td><td class="n">${t.calls}</td><td class="n">${t.people}</td><td class="n">${t.reached}</td><td class="n">${t.qualified}</td><td class="n">${t.reservations}</td><td class="n">${egp(t.collected)}</td><td>${team.filter(r=>r.report).length} of ${team.length}</td></tr></tbody></table></div>`}
+async function loadMgrReports(){
+  const d=S.rf.mdate||'';let q=S.sb.from('manager_reports').select('*').order('report_date',{ascending:false}).order('created_at',{ascending:false}).limit(120);
+  if(!isAdmin())q=q.eq('author_id',S.me.id);else if(d)q=q.eq('report_date',d);
+  return await Q(q)}
+function mgrReportsHtml(rows){
+  const btn=`<button class="btn pri" data-act="mr-new">+ Write my report</button>`;
+  return `<div class="row"><div class="hint" style="flex:1">${isAdmin()?'Team leaders\' reports (and your own). Each one keeps the team\'s numbers for that day.':'Your report for the day: what you did, what your team did, and the plan for tomorrow. The team\'s numbers are filled in for you.'}</div>
+   ${isAdmin()?`<input type="date" class="inp" data-ch="mr-date" value="${esc(S.rf.mdate||'')}" max="${today()}" style="max-width:180px" aria-label="Day">`:''}${btn}</div>
+  <div class="tbl-wrap"><table class="cards"><thead><tr><th>Day</th>${isAdmin()?'<th>By</th>':''}<th>Team reservations</th><th>Team calls</th><th>Collected</th><th>Daily reports in</th><th>Added</th></tr></thead><tbody>
+  ${(rows||[]).map(r=>{const t=r.team||[];const s=k=>t.reduce((a,x)=>a+(+x[k]||0),0);return `<tr class="click" data-act="mr-open" data-id="${r.id}"><td data-l="Day"><b>${fmtDay(r.report_date)}</b></td>${isAdmin()?`<td data-l="By" class="ar">${esc(pname(r.author_id))} <span class="hint">${ROLES[S.profiles[r.author_id]?.role]||''}</span></td>`:''}<td class="n" data-l="Team reservations"><b>${s('reservations')}</b></td><td class="n" data-l="Team calls">${s('calls')}</td><td class="n" data-l="Collected">${egp(s('collected'))}</td><td class="n" data-l="Daily reports in">${t.filter(x=>x.report).length} of ${t.length}</td><td data-l="Added">${fmtWhen(r.created_at)}</td></tr>`}).join('')||`<tr><td colspan="${isAdmin()?7:6}" class="empty">No reports yet. Click "+ Write my report".</td></tr>`}
+  </tbody></table></div>`}
+async function mgrReportModal(id){
+  let r=null;if(id){r=(S.d.reports.mgr||[]).find(x=>x.id===+id);}
+  const mine=!r||r.author_id===S.me.id;const d=r?r.report_date:today();
+  S.modal={type:'mrep',id:r?r.id:null,date:d,team:r?r.team:null};
+  const body=team=>`${mine?`<div class="row"><div class="field" style="max-width:220px"><label for="mr-d">Report date</label><input type="date" class="inp" id="mr-d" data-ch="mr-d" value="${esc(d)}" max="${today()}" ${r?'disabled':''}></div><div class="sp"></div>${r?'':'<button class="btn sm" data-act="mr-refresh">Refresh numbers</button>'}</div>`:`<div class="hint">By <b class="ar">${esc(pname(r.author_id))}</b> · ${fmtDay(r.report_date)} · added ${fmtWhen(r.created_at)}</div>`}
+   <div><h3 style="margin-bottom:6px">${isAdmin()&&mine?'Whole team':'My team'} on ${fmtDay(S.modal.date)}</h3><div id="mr-team">${team?teamTable(team):'<div class="empty"><span class="spin"></span> Counting the team\'s work…</div>'}</div></div>
+   ${mine?`<div class="field"><label for="mr-done">What I did today <i>*</i></label><textarea class="inp ar" dir="auto" id="mr-done" rows="4">${esc(r?.done_today||'')}</textarea></div>
+    <div class="field"><label for="mr-notes">Team: highlights, problems, who needs help</label><textarea class="inp ar" dir="auto" id="mr-notes" rows="4">${esc(r?.team_notes||'')}</textarea></div>
+    <div class="field"><label for="mr-tom">Plan for tomorrow</label><textarea class="inp ar" dir="auto" id="mr-tom" rows="3">${esc(r?.tomorrow||'')}</textarea></div>`:
+   [['What I did today',r.done_today],['Team: highlights and problems',r.team_notes],['Plan for tomorrow',r.tomorrow]].map(([t,v])=>`<div><h3 style="margin-bottom:6px">${t}</h3><div class="ar" dir="auto" style="white-space:pre-wrap">${esc(v||'—')}</div></div>`).join('')}`;
+  const foot=mine?`<button class="btn pri" data-act="mr-save">Save report</button><button class="btn" data-act="close">Cancel</button>`:`<button class="btn" data-act="close">Close</button>`;
+  openModal(`${mhead(r?(mine?'Edit my report · ':'Report · ')+fmtDay(r.report_date):'My daily report')}<div class="mb">${body(r?r.team:null)}</div><div class="mf">${foot}</div>`,true);
+  if(!r)await mrRefresh();
+}
+async function mrRefresh(){const m=S.modal;if(!m||m.type!=='mrep')return;const d=$('#mr-d')?.value||m.date;m.date=d;const box=$('#mr-team');if(box)box.innerHTML='<div class="empty"><span class="spin"></span> Counting the team\'s work…</div>';
+  try{const ids=myAgents().map(a=>a.id);m.team=await teamNumbers(d,ids);if(S.modal===m&&$('#mr-team'))$('#mr-team').innerHTML=teamTable(m.team);const h=$('.modal h3');if(h)h.textContent=(isAdmin()?'Whole team':'My team')+' on '+fmtDay(d)}catch(e){console.error(e);if($('#mr-team'))$('#mr-team').innerHTML=`<div class="note bad">${esc(errMsg(e))}</div>`}}
+async function saveMgrReport(){const m=S.modal;const done=$('#mr-done').value.trim();if(!done){toast('Write what you did today');return}
+  if(!m.team){toast('Wait for the team numbers to load');return}
+  const row={author_id:S.me.id,report_date:m.date,team:m.team,done_today:done,team_notes:$('#mr-notes').value.trim()||null,tomorrow:$('#mr-tom').value.trim()||null,updated_at:nowISO()};
+  if(!m.id){const ex=await Q(S.sb.from('manager_reports').select('id').eq('author_id',S.me.id).eq('report_date',m.date).maybeSingle()).catch(()=>null);if(ex&&ex.id){toast('You already have a report for that day. Open it from the list to edit it.');return}}
+  if(await guard(()=>m.id?Q(S.sb.from('manager_reports').update(row).eq('id',m.id)):Q(S.sb.from('manager_reports').insert(row)),'Report saved ✓')){closeModal();loadView()}}
+
+async function roundsClick(act,a,id){
+  const D=S.d.rounds;
+  if(act==='rd-region'){S.rd.region=a.dataset.k;render()}
+  else if(act==='rd-open'){S.rd={...S.rd,round:+id,tab:'all',q:'',st:''};loadView()}
+  else if(act==='rd-back'){S.rd.round=null;loadView()}
+  else if(act==='rd-tab'){S.rd.tab=a.dataset.k;render()}
+  else if(act==='rd-new')roundModal(null);
+  else if(act==='rd-edit-round')roundModal(+id);
+  else if(act==='rd-save-round'){const name=$('#ro-name').value.trim();if(!name){toast('Give the round a name');return}
+    const v={name,region:$('#ro-region').value,course:$('#ro-course').value||null,status:$('#ro-status').value,notes:$('#ro-notes').value.trim()||null};const mid=S.modal.id;
+    if(await guard(()=>mid?Q(S.sb.from('rounds').update(v).eq('id',mid)):Q(S.sb.from('rounds').insert(v)),'Round saved ✓')){closeModal();loadView()}}
+  else if(act==='rd-del-round'){if(a.dataset.sure!=='1'){a.dataset.sure='1';a.textContent='Click again to delete the round and all its rows';return}
+    if(await guard(()=>Q(S.sb.from('rounds').delete().eq('id',+id)),'Round deleted')){closeModal();S.rd.round=null;loadView()}}
+  else if(act==='rd-entry')entryModal(+id);
+  else if(act==='rd-add')entryModal(null);
+  else if(act==='rd-save-entry'){const v=readEntry();const mid=S.modal.id;if(!mid&&!v.name&&!v.phone){toast('Add at least a name or a mobile');return}
+    if(await guard(()=>mid?Q(S.sb.from('round_entries').update(v).eq('id',mid)):Q(S.sb.from('round_entries').insert({...v,round_id:S.rd.round,source:'manual',sort:D.ents.length+1})),'Saved ✓')){closeModal();loadView()}}
+  else if(act==='rd-del-entry'){if(a.dataset.sure!=='1'){a.dataset.sure='1';a.textContent='Click again to delete';return}
+    if(await guard(()=>Q(S.sb.from('round_entries').delete().eq('id',+id)),'Row deleted')){closeModal();loadView()}}
+  else if(act==='rd-defer'){const to=+$('#re-to').value;if(!to){toast('Pick the round to defer to');return}const e=D.ents.find(x=>x.id===+id);const from=D.rounds.find(r=>r.id===S.rd.round),tgt=D.rounds.find(r=>r.id===to);
+    const {id:_i,reservation_id,created_at,updated_at,round_id,sort,...copy}=e;
+    if(await guard(async()=>{await Q(S.sb.from('round_entries').insert({...copy,round_id:to,status:'Deferred in',source:'manual',notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_by:S.me.id}));
+      await Q(S.sb.from('round_entries').update({status:'Deferred out',notes:[e.notes,'تأجيل ل'+tgt.name].filter(Boolean).join(' / '),updated_at:nowISO(),updated_by:S.me.id}).eq('id',e.id))},'Deferred to '+tgt.name+' ✓')){closeModal();loadView()}}
+  else if(act==='rd-xlsx')exportRoundXlsx();
+  else if(act==='rd-import')importModal();
+  else if(act==='rd-import-go'){const url=$('#im-url').value.trim(),rn=$('#im-round').value.trim();if(!url||!rn){toast('Add the link and the round');return}
+    a.disabled=true;$('#im-prev').innerHTML='<div class="empty"><span class="spin"></span> Reading the sheet…</div>';
+    try{const rows=await fetchSheetTab(url);const res=await importRows(rn,$('#im-region').value,rows,{fillLocation:locKey($('#im-loc').value)||null});
+      $('#im-prev').innerHTML=`<div class="note good">Added ${res.added} student${res.added===1?'':'s'} to ${esc(res.round.name)}. Skipped ${res.skipped} already there.</div>`;a.textContent='Import again';a.disabled=false;loadView()}
+    catch(e){console.error(e);$('#im-prev').innerHTML=`<div class="note bad">${esc(errMsg(e))}</div>`;a.disabled=false}}
+  // manager reports
+  else if(act==='mr-new')mgrReportModal(null);
+  else if(act==='mr-open')mgrReportModal(id);
+  else if(act==='mr-refresh')mrRefresh();
+  else if(act==='mr-save')saveMgrReport();
+}
+
 /* ================= team & accounts ================= */
 async function loadTeam(){await loadRef()}
 function teamView(){
@@ -1001,6 +1248,7 @@ function staffModal(id){
    <div class="row"><div class="field"><label for="s-start">Start date</label><input type="date" class="inp" id="s-start" value="${esc(p.start_date||today())}"></div>
     <div class="field"><label for="s-salary">Monthly salary (EGP, optional)</label><input type="number" min="0" class="inp num" id="s-salary" value="${esc(p.salary??'')}"></div></div>
    <div class="field"><label for="s-notes">Notes</label><input class="inp ar" dir="auto" id="s-notes" value="${esc(p.notes||'')}"></div>
+   <label class="check"><input type="checkbox" id="s-rounds" ${p.rounds_access?'checked':''}><span>Can open the <b>Rounds</b> sheets <span class="hint">(admins and "Rounds (Operations)" accounts always can)</span></span></label>
    ${id&&!self?`<div class="card" style="background:var(--bg)"><h3 style="margin-bottom:8px">Access</h3>
     ${p.active?`<div class="row"><span>Account is <span class="pill green">Active</span> since ${fmtDay(p.start_date)}</span><div class="sp"></div><label class="hint" for="s-end">Last day</label><input type="date" class="inp" id="s-end" value="${today()}"><button class="btn bad sm" data-act="st-deactivate" data-id="${id}">Deactivate</button></div>`:
      `<div class="row"><span>Account is <span class="pill red">Deactivated</span> since ${fmtDay(p.end_date)}</span><div class="sp"></div><button class="btn good sm" data-act="st-activate" data-id="${id}">Reactivate</button></div>`}
@@ -1011,7 +1259,7 @@ async function createAccount(){
   const name=$('#s-name').value.trim(),email=$('#s-email').value.trim().toLowerCase(),pw=$('#s-pw').value.trim();
   if(!name||!email||pw.length<8){toast('Name, email and a password of 8+ characters are required');return}
   const phone=normPhone($('#s-phone').value)||$('#s-phone').value.trim()||null;
-  const prof={name,email,phone,role:$('#s-role').value,tl_id:$('#s-tl').value||null,start_date:$('#s-start').value||today(),salary:$('#s-salary').value===''?null:+$('#s-salary').value,notes:$('#s-notes').value.trim()||null,intern:!!S.modal.prefill?.intern};
+  const prof={name,email,phone,role:$('#s-role').value,tl_id:$('#s-tl').value||null,start_date:$('#s-start').value||today(),salary:$('#s-salary').value===''?null:+$('#s-salary').value,notes:$('#s-notes').value.trim()||null,intern:!!S.modal.prefill?.intern,rounds_access:$('#s-rounds').checked};
   const btn=$('[data-act="st-save"]');if(btn)btn.disabled=true;
   try{
     const tmp=supabase.createClient(CFG.SUPABASE_URL,CFG.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'sd-create-'+Date.now()}});
@@ -1185,6 +1433,7 @@ document.addEventListener('input',e=>{
   const el=e.target;const k=el.dataset.in;markDirty(el);
   if(k==='q'){S.f.q=el.value;S.f.page=0;clearTimeout(qT);qT=setTimeout(loadView,350)}
   else if(k==='brand'){$('#br-pn').textContent=$('#br-name').value;$('#br-ps').textContent=$('#br-sub').value}
+  else if(k==='rdq'){S.rd.q=el.value;clearTimeout(qT);qT=setTimeout(()=>{render();const i=$('#rd-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)}
   else if(k==='inq'){S.inf.q=el.value;clearTimeout(qT);qT=setTimeout(render,250)}
   else if(k==='imp'){const s=impState();s.text=el.value;clearTimeout(qT);qT=setTimeout(()=>{s.rows=rowsToLeads(parseTable(s.text));s.fileName='';render();checkDups()},500)}
 });
@@ -1209,6 +1458,9 @@ document.addEventListener('change',async e=>{
   else if(k.startsWith('resf.')){S.resf[k.slice(5)]=el.value;loadView()}
   else if(k.startsWith('imp.')){impState()[k.slice(4)]=el.value;render()}
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
+  else if(k==='rd-st'){S.rd.st=el.value;render()}
+  else if(k==='mr-date'){S.rf.mdate=el.value;loadView()}
+  else if(k==='mr-d'){mrRefresh()}
   else if(k==='att-who'){S.att.who=el.value;render()}
   else if(k==='att-month'){S.att.month=el.value||today().slice(0,7);S.d.att=null;loadView()}
   else if(k==='res-status'){await guard(()=>Q(S.sb.from('reservations').update({status:el.value}).eq('id',el.dataset.id)),'Status updated ✓');loadView()}
@@ -1226,6 +1478,7 @@ document.addEventListener('click',async e=>{
   if(act==='refresh'){if(S.view==='team'||S.view==='config'){await loadRef();render()}else loadView();return}
   if(act==='pw-mine'){S.modal={type:'pw'};openModal(`${mhead('Change my password')}<div class="mb"><div class="field"><label for="pw-new">New password (8+ characters)</label><input class="inp" id="pw-new" type="password" autocomplete="new-password" autofocus></div></div><div class="mf"><button class="btn pri" data-act="pw-save">Save</button><button class="btn" data-act="close">Cancel</button></div>`);return}
   if(act==='pw-save'){const pw=$('#pw-new').value;if(pw.length<8){toast('Use at least 8 characters');return}const {error}=await S.sb.auth.updateUser({password:pw});if(error)toast(errMsg(error));else{toast('Password changed ✓');closeModal()}return}
+  if(act.startsWith('rd-')||act.startsWith('mr-')){await roundsClick(act,a,id);return}
   // leads
   if(act==='tab'){S.f.tab=a.dataset.k;S.f.page=0;S.sel.clear();loadView()}
   else if(act==='pg'){S.f.page+=+a.dataset.d;loadView();window.scrollTo(0,0)}
@@ -1287,7 +1540,7 @@ document.addEventListener('click',async e=>{
   else if(act==='copy-cred')copyText(S._cred||'');
   else if(act==='st-save'){const mid=S.modal?.id;if(!mid)return createAccount();
     const name=$('#s-name').value.trim();if(!name){toast('Name is required');return}
-    const v={name,phone:normPhone($('#s-phone').value)||$('#s-phone').value.trim()||null,tl_id:$('#s-tl').value||null,start_date:$('#s-start').value||today(),salary:$('#s-salary').value===''?null:+$('#s-salary').value,notes:$('#s-notes').value.trim()||null};
+    const v={name,phone:normPhone($('#s-phone').value)||$('#s-phone').value.trim()||null,tl_id:$('#s-tl').value||null,start_date:$('#s-start').value||today(),salary:$('#s-salary').value===''?null:+$('#s-salary').value,notes:$('#s-notes').value.trim()||null,rounds_access:$('#s-rounds').checked};
     if(mid!==S.me.id)v.role=$('#s-role').value;
     if(await guard(()=>Q(S.sb.from('profiles').update(v).eq('id',mid)),'Saved ✓')){await loadRef();closeModal();render()}}
   else if(act==='st-deactivate'){const d=$('#s-end').value||today();if(await guard(()=>Q(S.sb.rpc('admin_set_active',{p_user:id,p_active:false,p_date:d})),'Account deactivated ✓')){await loadRef();closeModal();render()}}
