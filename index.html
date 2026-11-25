@@ -286,6 +286,25 @@ const fuMark=l=>{if(CLOSED_ST.includes(l.status)||!(l.follow_up||l.follow_up_at)
 const fmtWhen=iso=>{if(!iso)return '—';const d=dayOf(iso),t=today();if(d===t)return 'Today '+fmtTime(iso);if(d===addDays(t,-1))return 'Yesterday '+fmtTime(iso);return fmtDay(d)+' '+fmtTime(iso)};
 const nf=n=>(+n||0).toLocaleString('en-US');
 const egp=n=>'EGP '+nf(Math.round(+n||0));
+/* transfer screenshots: kept private in Supabase storage, opened with a link that works for 10 minutes */
+const PROOF_BUCKET='payment-proofs';
+const proofInput=(id,label,hint)=>`<div class="field"><label for="${id}">${label||'Transfer screenshot'}</label><input type="file" class="inp" id="${id}" accept="image/*,application/pdf"><div class="hint">${hint||'Screenshot of the transfer — image or PDF, up to 10 MB'}</div></div>`;
+async function uploadProof(inputId,prefix){const el=document.getElementById(inputId);const f=el&&el.files&&el.files[0];if(!f)return null;
+  if(f.size>10*1024*1024)throw new Error('The screenshot is bigger than 10 MB. Send a smaller one.');
+  const ext=((f.name.split('.').pop()||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5))||(f.type==='application/pdf'?'pdf':'jpg');
+  const path=`${prefix}/${today()}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const {error}=await S.sb.storage.from(PROOF_BUCKET).upload(path,f,{contentType:f.type||undefined,upsert:false});if(error)throw error;return path}
+async function openProof(path){const w=window.open('','_blank');const {data,error}=await S.sb.storage.from(PROOF_BUCKET).createSignedUrl(path,600);
+  if(error){if(w)w.close();toast(errMsg(error));return}if(w)w.location.href=data.signedUrl;else location.href=data.signedUrl}
+const proofCell=(p,t,id)=>p?`<button class="btn sm" data-act="proof-view" data-p="${esc(p)}">📎 View</button>`:id?`<button class="btn sm" data-act="proof-attach" data-t="${t}" data-id="${id}" title="Attach the transfer screenshot">+ Attach</button>`:'—';
+function proofAttachModal(t,id){const back=S.modal;S.modal={type:'proof',t,id:+id,back};
+  openModal(`${mhead('Attach transfer screenshot')}<div class="mb">${proofInput('pa-file')}</div><div class="mf"><button class="btn pri" data-act="proof-attach-save">Upload</button><button class="btn" data-act="close">Cancel</button></div>`)}
+async function saveProofAttach(){const m=S.modal;const el=$('#pa-file');if(!el.files||!el.files[0]){toast('Choose the screenshot');return}
+  const tbl={res:'reservation_payments',round:'round_payments',dep:'round_entries'}[m.t];const col=m.t==='dep'?'deposit_proof':'proof_path';
+  const ok=await guard(async()=>{const p=await uploadProof('pa-file',m.t==='res'?'res':'round');const r=await Q(S.sb.from(tbl).update({[col]:p}).eq('id',m.id).select('id'));if(!r||!r.length)throw new Error('You can\'t change this payment')},'Screenshot saved ✓');
+  if(!ok)return;closeModal();const b=m.back;
+  if(b&&b.type==='rentry'){await refreshRoundEnts(true);entryModal(b.id)}
+  else if(b&&b.type==='client')clientModal(b.id);else loadView()}
 const pct=(a,b)=>b?Math.round(a*1000/b)/10+'%':'—';
 const plural=(n,w)=>nf(n)+' '+w+(n===1?'':'s');
 const daysBetween=(a,b)=>Math.round((parseD(b)-parseD(a))/864e5)+1;
@@ -742,7 +761,7 @@ function balancePill(r){const b=resBalance(r);if(b.closed)return `<span class="p
 function resCard(r,leadId){const b=resBalance(r);
   return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px"><div class="row" style="justify-content:space-between"><b><span class="num">${esc(r.code)}</span> · ${esc(r.course||'')}</b><span>${r.group_id?esc(groupName(r.group_id)):r.round_name?`${esc(r.round_name)} · <span class="pill amber">Group not chosen</span>`:'<span class="pill amber">No group yet</span>'} <span class="pill ${RSTATUS[r.status]||''}">${esc(r.status)}</span></span></div>
    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr))">${kpi('Course price',b.price!=null?egp(b.price):'—')}${kpi('Paid (net)',egp(b.paid))}${kpi('Refunded',egp(r.refunded||0))}<div class="kpi"><span>Balance</span><div style="margin-top:6px">${balancePill(r)}</div></div></div>
-   ${(r.payments||[]).length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Note</th><th>By</th></tr></thead><tbody>${r.payments.map(p=>`<tr><td class="num">${fmtDay(p.pay_date)}</td><td>${p.kind==='refund'?`<span class="pill red">Refund${p.refund_reason?' · '+esc(p.refund_reason):''}</span>`:'<span class="pill green">Payment</span>'}</td><td class="n">${p.kind==='refund'?'−':''}${egp(p.amount)}</td><td>${esc(p.method||'')}${p.kind==='refund'&&(p.refund_phone||p.refund_name)?`<span class="s num">to ${esc(p.refund_phone||'')}</span><span class="s ar">${esc(p.refund_name||'')}</span>`:''}</td><td class="ar" dir="auto">${p.refund_why?`<b>Why:</b> ${esc(p.refund_why)}`:''}${p.refund_why&&p.note?'<br>':''}${esc(p.note||'')}</td><td class="ar">${esc(pname(p.by))}</td></tr>`).join('')}</tbody></table></div>`:''}
+   ${(r.payments||[]).length?`<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Note</th><th>By</th><th>Screenshot</th></tr></thead><tbody>${r.payments.map(p=>`<tr><td class="num">${fmtDay(p.pay_date)}</td><td>${p.kind==='refund'?`<span class="pill red">Refund${p.refund_reason?' · '+esc(p.refund_reason):''}</span>`:'<span class="pill green">Payment</span>'}</td><td class="n">${p.kind==='refund'?'−':''}${egp(p.amount)}</td><td>${esc(p.method||'')}${p.kind==='refund'&&(p.refund_phone||p.refund_name)?`<span class="s num">to ${esc(p.refund_phone||'')}</span><span class="s ar">${esc(p.refund_name||'')}</span>`:''}</td><td class="ar" dir="auto">${p.refund_why?`<b>Why:</b> ${esc(p.refund_why)}`:''}${p.refund_why&&p.note?'<br>':''}${esc(p.note||'')}</td><td class="ar">${esc(pname(p.by))}</td><td>${proofCell(p.proof_path,'res',p.id)}</td></tr>`).join('')}</tbody></table></div>`:''}
    ${b.closed?'':`<div class="row"><button class="btn sm" data-act="pay-add" data-id="${r.id}" data-l="${leadId}">+ Add payment</button>${b.over?`<button class="btn sm pri" data-act="refund" data-id="${r.id}" data-l="${leadId}" data-k="overpaid">Refund overpayment ${egp(b.over)}</button>`:''}${b.paid>0?`<button class="btn sm bad" data-act="refund" data-id="${r.id}" data-l="${leadId}" data-k="refund">Refund</button>`:''}</div>`}</div>`}
 async function payModal(resId,leadId,kind){
   const r=(await Q(S.sb.from('reservations').select('*').eq('id',resId).single()));const b=resBalance(r);
@@ -756,6 +775,7 @@ async function payModal(resId,leadId,kind){
     <div class="field"><label for="py-meth">Method</label><select class="inp" id="py-meth">${METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div>
     <div class="field"><label for="py-date">Date</label><input type="date" class="inp" id="py-date" value="${today()}"></div></div>
    <div class="field"><label for="py-note">Note</label><input class="inp ar" dir="auto" id="py-note"></div>
+   ${proofInput('py-proof')}
   </div><div class="mf"><button class="btn pri" data-act="pay-save">Save payment</button><button class="btn" data-act="close">Cancel</button></div>`);return}
   openModal(`${mhead('Refund · '+esc(r.code)+' · <span class="ar">'+esc(r.client_name||'')+'</span>')}<div class="mb">
    <div class="hint">Course price ${b.price!=null?egp(b.price):'—'} · paid so far ${egp(b.paid)}${b.over?' · overpaid by '+egp(b.over):b.remain?' · remaining '+egp(b.remain):''}</div>
@@ -769,6 +789,7 @@ async function payModal(resId,leadId,kind){
     <div class="field" style="margin-top:8px"><label for="py-name">Name on that number / account <i>*</i></label><input class="inp ar" dir="auto" id="py-name" value="${esc(r.client_name&&!/^unknown$/i.test(r.client_name)?r.client_name:'')}" placeholder="The full name registered on the wallet or InstaPay"></div>
     <div class="hint" style="margin-top:6px">The client's number is filled in. Change it if the money goes to a different number.</div></div>
    <div class="field"><label for="py-note">Note (optional)</label><input class="inp ar" dir="auto" id="py-note" placeholder="e.g. transfer reference number"></div>
+   ${proofInput('py-proof','Refund transfer screenshot','Screenshot of the money sent back — image or PDF, up to 10 MB')}
    <label class="row" style="gap:8px"><input type="checkbox" id="py-close" ${kind==='cancel'?'checked':''}> Mark the reservation as Refunded (the client is no longer booked)</label>
   </div><div class="mf"><button class="btn bad" data-act="pay-save">Save refund</button><button class="btn" data-act="close">Cancel</button></div>`);
 }
@@ -783,8 +804,8 @@ async function savePay(){
     if(meth!=='Cash'&&!ph){toast('Enter the number the money goes back to');return}
     if(meth!=='Cash'&&!nm){toast('Enter the name on that number or account');return}
     rf={refund_why:why,refund_phone:normPhone(ph)||ph||null,refund_name:nm||null};}
-  const ok=await guard(async()=>{
-    await Q(S.sb.from('reservation_payments').insert({reservation_id:m.resId,kind:refund?'refund':'payment',amount:amt,method:$('#py-meth').value,refund_reason:reason,...rf,note:$('#py-note').value.trim()||null,pay_date:$('#py-date').value||today(),by:S.me.id}));
+  const ok=await guard(async()=>{const proof=await uploadProof('py-proof','res');
+    await Q(S.sb.from('reservation_payments').insert({reservation_id:m.resId,kind:refund?'refund':'payment',amount:amt,method:$('#py-meth').value,refund_reason:reason,...rf,note:$('#py-note').value.trim()||null,pay_date:$('#py-date').value||today(),proof_path:proof,by:S.me.id}));
     if(close)await Q(S.sb.from('reservations').update({status:'Refunded'}).eq('id',m.resId));
     if(m.leadId)await addEvent(m.leadId,refund?'refund':'payment',{comment:$('#py-note').value.trim()||null,data:{code:m.res.code,amount:amt,method:$('#py-meth').value,reason,closed:close,...rf}});
   },refund?'Refund saved ✓':'Payment saved ✓');
@@ -849,6 +870,7 @@ async function callModal(id){
     <div class="row" style="margin-top:8px"><div class="field"><label for="r-plan">Plan <i>*</i></label><select class="inp" id="r-plan" data-act-ch="r-plan"><option value="">— Cash or installments —</option><option value="كاش">Cash (كاش)</option><option value="قسط">Installments (قسط)</option></select></div>
      <div class="field"><label for="r-to">Paid to (wallet / InstaPay number)</label><input class="inp" id="r-to" placeholder="01080316147 / ادهم"></div></div>
     <div class="field" style="margin-top:8px"><label for="r-email">Client email</label><input class="inp" id="r-email" type="email" placeholder="name@gmail.com"></div>
+    <div style="margin-top:8px">${proofInput('r-proof','Transfer screenshot (deposit or full amount)')}</div>
     <div class="hint" id="r-price-h" style="margin-top:6px">${priceHint(l.course||courseNames()[0],'')}</div></div>
    ${mgr?`<div class="field"><label for="c-mv">Reassign to another agent</label><select class="inp ar" id="c-mv"><option value="">— Keep with ${esc(pname(l.agent_id))} —</option>${myAgents().filter(a=>a.id!==l.agent_id).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>`:''}
    <details><summary style="cursor:pointer;font-weight:600">History (${F.events.length})</summary><div class="timeline" style="margin-top:8px;max-height:260px;overflow:auto">${F.events.slice().reverse().map(eventLine).join('')}</div></details>
@@ -880,13 +902,13 @@ async function saveCall(id){
   if(st){const qv=$('#c-q').value;patch.status=st;patch.qualified=qv===''?l.qualified:qv==='1';patch.last_call_at=nowISO();patch.calls_count=(l.calls_count||0)+1;
     if(['Reserved','Not Interested'].includes(st)){patch.follow_up=null;patch.follow_up_at=null}if(st==='Reserved')patch.interest_group='reserved';patch.lost_reason=st==='Not Interested'?why:null;
     if(resv){patch.course=resv.course;if(resv.group_id)patch.group_id=resv.group_id}}
-  const ok=await guard(async()=>{
+  const ok=await guard(async()=>{const proof=resv?await uploadProof('r-proof','res'):null;
     await Q(S.sb.from('leads').update(patch).eq('id',id));
     if(st)await addEvent(id,'call',{status:st,comment:cm,data:{qualified:patch.qualified??null,reason:why||undefined,follow_up:patch.follow_up,follow_up_at:patch.follow_up_at}});
     if(resv){const code='RES-'+today().replace(/-/g,'')+'-'+String(Math.floor(Math.random()*90000)+10000);
       const pf=priceFor(resv.course,resv.plan);const price=pf.price;const {amount:paid,...rest}=resv;rest.offer_id=pf.offer?pf.offer.id:null;
       const rr=await Q(S.sb.from('reservations').insert({...rest,price,code,lead_id:id,client_name:name,phone:l.phone,agent_id:l.agent_id||S.me.id,created_by:S.me.id}).select('id').single());
-      if(paid>0)await Q(S.sb.from('reservation_payments').insert({reservation_id:rr.id,kind:'payment',amount:paid,method:resv.method,note:resv.payment,by:S.me.id}));
+      if(paid>0)await Q(S.sb.from('reservation_payments').insert({reservation_id:rr.id,kind:'payment',amount:paid,method:resv.method,note:resv.payment,proof_path:proof,by:S.me.id}));
       await addEvent(id,'reserved',{data:{...resv,code}});if(resv.group_id)await addEvent(id,'group_joined',{data:{group_id:resv.group_id}});}
     if(mv){await addEvent(id,'reassigned',{data:{from:l.agent_id,to:mv}});await Q(S.sb.from('leads').update({agent_id:mv,assigned_at:nowISO()}).eq('id',id))}
   },resv?'Reservation saved ✓':mv?'Saved and reassigned ✓':'Saved ✓');
@@ -1227,7 +1249,7 @@ const hasRounds=()=>!!S.me&&S.me.active!==false&&(S.me.role==='admin'||S.me.role
 const RST={'Active':{t:'Active',bg:'',bd:'transparent'},'Deferred in':{t:'Deferred in (from an earlier round)',bg:'#e0f9fb',bd:'#06b6d4'},
   'Deferred out':{t:'Deferred out (to a later round)',bg:'#ffedd5',bd:'#f97316'},'Withdrawn':{t:'Withdrawn',bg:'#fee2e2',bd:'#ef4444'},'Refunded':{t:'Refunded (money returned, stays listed)',bg:'#fdba74',bd:'#ea580c'},'Later start':{t:'Starts later (not counted in this round)',bg:'#dcfce7',bd:'#16a34a'}};
 const REGIONS=['Cairo','Alex','Online','Other'];
-const RCOLS=[['booked_on','Booked'],['ref','Code'],['name','Name'],['phone','Mobile'],['deposit','Paid'],['received_on','Paid to'],['agent','Agent'],['location','Group'],['plan','Plan'],['notes','Notes'],['email','Email'],['status','Status']];
+const RCOLS=[['booked_on','Booked'],['ref','Code'],['name','Name'],['phone','Mobile'],['deposit','Paid'],['paid_more','Paid later · left'],['received_on','Paid to'],['agent','Agent'],['location','Group'],['plan','Plan'],['notes','Notes'],['email','Email'],['status','Status']];
 const rnum=n=>{const m=String(n||'').match(/\d+/);return m?+m[0]:0};
 const digits=s=>String(s||'').replace(/\D/g,'').slice(-10);
 const locKey=s=>String(s||'').replace(/\s+/g,' ').trim();
@@ -1260,8 +1282,17 @@ async function loadRounds(){
   if(!S.rd)S.rd={round:null,tab:'all',q:'',st:'',region:'',att:'in',ag:''};loadSeats();
   const [rounds,ents]=await Promise.all([Q(S.sb.from('rounds').select('*')),S.rd.round?all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id')):all(()=>S.sb.from('round_entries').select('round_id,status,location'))]);
   rounds.sort((a,b)=>(a.status==='Closed')-(b.status==='Closed')||rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));
-  S.d.rounds={rounds,ents};
+  S.d.rounds={rounds,ents,pays:S.rd.round?await loadRoundPays(ents):{}};
 }
+/* payments made after booking (installments / the rest), per row of the open round */
+async function loadRoundPays(ents){try{const ids=ents.map(e=>e.id).filter(Boolean);let ps=[];
+  for(let i=0;i<ids.length;i+=150)ps=ps.concat(await Q(S.sb.from('round_payments').select('entry_id,amount').in('entry_id',ids.slice(i,i+150))));
+  const m={};ps.forEach(p=>{const o=m[p.entry_id]=m[p.entry_id]||{sum:0,n:0};o.sum+=+p.amount||0;o.n++});return m}catch(e){console.warn(e);return {}}}
+const PAYKIND={installment:'Installment (قسط)',remaining:'The rest (باقي المبلغ)',full:'Full amount (المبلغ كله)',other:'Other'};
+/* the course price written in the plan, e.g. "قسط 14500" → 14500 */
+const planPrice=p=>{const t=String(p||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));const ns=(t.match(/\d[\d,]*/g)||[]).map(x=>+x.replace(/,/g,'')).filter(n=>n>=1000&&n<300000);return ns.length?Math.max(...ns):null};
+function entryMoney(e,pays){const dep=+e.deposit||0,more=((pays||{})[e.id]||{}).sum||0,price=planPrice(e.plan);const total=dep+more;
+  return {dep,more,total,price,remain:price!=null?Math.max(0,price-total):null,over:price!=null&&total>price?total-price:0}}
 function roundsView(){
   const D=S.d.rounds;if(!D)return '<div class="empty"><span class="spin"></span></div>';
   return S.rd.round?roundSheetView(D):roundsListView(D);
@@ -1302,7 +1333,7 @@ function roundSheetView(D){
    ${gsum.map(t=>`<tr class="click ${S.rd.tab===t.key?'on':''}" data-act="rd-tab" data-k="${esc(t.key)}"><td class="ar" dir="auto"><b>${esc(t.label)}</b></td><td class="num"><b>${t.n-(t['Withdrawn']||0)-(t['Refunded']||0)-(t['Deferred out']||0)-(t['Later start']||0)}</b></td><td class="num">${t['Deferred in']||''}</td><td class="num">${t['Later start']||''}</td><td class="num">${t['Deferred out']||''}</td><td class="num">${t['Withdrawn']||''}</td><td class="num">${t['Refunded']||''}</td><td class="num">${t.n}</td><td class="num">${(()=>{const g=t.key==='_none'?null:S.groups.find(x=>x.id===matchGroup(r.name,t.label));if(!g||!g.capacity)return '—';const st=seatOf(g);return `<span class="pill ${st.full?'red':'green'}">${st.full?'Full':st.left+' left'} · ${st.taken}/${st.cap}</span>`})()}</td></tr>`).join('')}
    <tr class="tot click" data-act="rd-tab" data-k="all"><td><b>All groups</b></td><td class="num"><b>${D.ents.filter(inRound).length}</b></td><td class="num">${sc['Deferred in']||''}</td><td class="num">${sc['Later start']||''}</td><td class="num">${sc['Deferred out']||''}</td><td class="num">${sc['Withdrawn']||''}</td><td class="num">${sc['Refunded']||''}</td><td class="num">${D.ents.length}</td><td></td></tr></tbody></table></div>`;
   
-  const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>{const g=S.groups.find(x=>x.id===matchGroup(r.name,l));const st=g?seatOf(g):{};return `<option value="${esc(l)}" ${st.full?'disabled':''}>${esc(l)}${st.full?' · FULL':st.cap?` · ${st.left} left`:''}</option>`}).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);return esc(v??'')};
+  const pick=locPickOptions(D,r);const cell=(e,k)=>{const v=e[k];if(k==='location'&&!splitLoc(v).place)return `<select class="inp locpick" data-act="noop" data-ch="rd-loc" data-id="${e.id}" aria-label="Choose the group"><option value="">— Choose group —</option>${pick.map(l=>{const g=S.groups.find(x=>x.id===matchGroup(r.name,l));const st=g?seatOf(g):{};return `<option value="${esc(l)}" ${st.full?'disabled':''}>${esc(l)}${st.full?' · FULL':st.cap?` · ${st.left} left`:''}</option>`}).join('')}<option value="__other">Other (type it)…</option></select>`;if(k==='status')return `<span class="rst" style="background:${RST[v]?.bd||'#999'}"></span>${esc(v)}`;if(k==='deposit')return v==null?'':nf(v);if(k==='paid_more'){const m=entryMoney(e,D.pays);return `${m.more?`<b>${nf(m.more)}</b>`:''}${m.remain==null?'':m.remain>0?` <span class="s" style="color:#b45309">left ${nf(m.remain)}</span>`:` <span class="s" style="color:#15803d">✓ paid</span>`}`}return esc(v??'')};
   return `<div class="head"><div><div class="hint"><a href="#rounds" data-act="rd-back">← All rounds</a></div><h1>${esc(r.name)}</h1><div class="sub">${esc(r.region)}${r.course?' · '+esc(r.course):''} · <b>${plural(nIn,'student')} attending</b>${nOut?` · ${nOut} not attending`:''} · ${esc(r.status)}</div></div><div class="sp"></div>
    <button class="btn" data-act="rd-edit-round" data-id="${r.id}">Round settings</button><button class="btn" data-act="rd-log">Changes</button><button class="btn" data-act="rd-xlsx">Export Excel</button><button class="btn pri" data-act="rd-add">+ Add student</button></div>
   <div class="tabs"><button data-act="rd-tab" data-k="all" class="${S.rd.tab==='all'?'on':''}">All groups · ${nIn}</button>${noneIn?`<button data-act="rd-tab" data-k="_none" class="tab-warn ${S.rd.tab==='_none'?'on':''}">⚠ ${NONE_LBL} · ${noneIn}</button>`:''}${tabs.map(t=>`<button data-act="rd-tab" data-k="${esc(t.key)}" class="ar ${S.rd.tab===t.key?'on':''}" dir="auto" title="${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)-(t['Later start']||0)} attending of ${t.n}">${esc(t.label)} · ${t.n-(t['Withdrawn']||0)-(t['Deferred out']||0)-(t['Later start']||0)}</button>`).join('')}</div>
@@ -1342,7 +1373,7 @@ async function linkEntriesToGroups(){let n=0;const rounds=await Q(S.sb.from('rou
 async function refreshRoundEnts(force){if(!S.rd||!S.rd.round||!S.d.rounds)return;
   const ents=await all(()=>S.sb.from('round_entries').select('*').eq('round_id',S.rd.round).order('sort',{nullsFirst:false}).order('id'));
   const sig=x=>x.length+'|'+x.map(e=>e.id+':'+(e.updated_at||'')).join(',');if(!force&&sig(ents)===sig(S.d.rounds.ents))return;
-  const sw=$('.sheet-wrap'),sl=sw?sw.scrollLeft:0,sy=window.scrollY;S.d.rounds={...S.d.rounds,ents,G:null};render();const sw2=$('.sheet-wrap');if(sw2)sw2.scrollLeft=sl;window.scrollTo(0,sy)}
+  const pays=await loadRoundPays(ents);const sw=$('.sheet-wrap'),sl=sw?sw.scrollLeft:0,sy=window.scrollY;S.d.rounds={...S.d.rounds,ents,pays,G:null};render();const sw2=$('.sheet-wrap');if(sw2)sw2.scrollLeft=sl;window.scrollTo(0,sy)}
 /* the round sheet refreshes itself every 20 seconds, so a reservation sales just added shows up without reloading */
 setInterval(()=>{const ae=document.activeElement;if(S.view!=='rounds'||!S.rd||!S.rd.round||S.modal||document.hidden||(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName)))return;refreshRoundEnts(false).catch(e=>console.warn(e))},20000);
 function entryModal(id){
@@ -1360,10 +1391,38 @@ function entryModal(id){
    <datalist id="re-locs">${locs.map(l=>`<option value="${esc(l)}">`).join('')}</datalist>
    <div class="row">${f('email','Email')}<div class="field"><label for="re-status">Status</label><select class="inp" id="re-status">${Object.keys(RST).map(s=>`<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
    <div class="field"><label for="re-notes">Notes</label><textarea class="inp ar" dir="auto" id="re-notes" rows="3">${esc(e.notes||'')}</textarea></div>
+   ${id?`<div class="card" id="re-pays" style="background:var(--bg)"><h3>Payments</h3><div class="empty"><span class="spin"></span></div></div>`:''}
    ${id?`<div class="card" style="background:var(--bg)"><h3 style="margin-bottom:8px">Defer to another round</h3><div class="row"><select class="inp" id="re-to" style="flex:1"><option value="">— Pick the round —</option>${D.rounds.filter(r=>r.id!==S.rd.round).map(r=>`<option value="${r.id}">${esc(r.name)} · ${esc(r.region)}</option>`).join('')}</select><button class="btn" data-act="rd-defer" data-id="${id}">Defer</button></div>
     <div class="hint">Moves the student to the other round as "Deferred in" with all their details and a note. They leave this round.</div></div>`:''}
   </div><div class="mf"><button class="btn pri" data-act="rd-save-entry">Save</button>${id?`<button class="btn bad" data-act="rd-del-entry" data-id="${id}">Delete row</button>`:''}<button class="btn" data-act="close">Cancel</button></div>`,true);
+  if(id)fillEntryPays(e);
 }
+async function fillEntryPays(e){const box=$('#re-pays');if(!box)return;
+  const [rp,resp]=await Promise.all([Q(S.sb.from('round_payments').select('*').eq('entry_id',e.id).order('pay_date').order('id')).catch(()=>[]),
+    e.reservation_id?Q(S.sb.from('reservation_payments').select('*').eq('reservation_id',e.reservation_id).order('created_at')).catch(()=>[]):Promise.resolve([])]);
+  if(!$('#re-pays')||S.modal?.type!=='rentry'||S.modal.id!==e.id)return;
+  const pays={[e.id]:{sum:rp.reduce((a,p)=>a+(+p.amount||0),0)}};const m=entryMoney(e,pays);
+  const row=(d,kind,amt,meth,to,note,by,proof)=>`<tr><td class="num">${d?fmtDay(d):'—'}</td><td class="ar" dir="auto">${kind}</td><td class="n">${amt}</td><td class="ar" dir="auto">${esc(meth||'')}${to?`<span class="s num">${esc(to)}</span>`:''}</td><td class="ar" dir="auto">${esc(note||'')}</td><td class="ar">${esc(by||'')}</td><td>${proof}</td></tr>`;
+  const depRows=e.reservation_id&&resp.length?resp.map(p=>row(p.pay_date,p.kind==='refund'?'<span class="pill red">Refund</span>':'Booking payment ('+esc(p.note||'deposit')+')',(p.kind==='refund'?'−':'')+nf(p.amount),p.method,null,p.refund_why,pname(p.by),proofCell(p.proof_path,'res',p.id))).join('')
+    :m.dep?row(null,'Deposit (at booking)',nf(m.dep),'',e.received_on,'','',e.reservation_id?'—':proofCell(e.deposit_proof,'dep',e.id)):'';
+  const def=m.remain>0?m.remain:'';
+  box.innerHTML=`<h3 style="margin-bottom:8px">Payments</h3>
+   <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:10px">${kpi('Course price',m.price!=null?egp(m.price):'—')}${kpi('Paid at booking',egp(m.dep))}${kpi('Paid later',egp(m.more))}<div class="kpi"><span>Remaining</span><div style="margin-top:6px">${m.price==null?'<span class="hint">Write the price in Plan</span>':m.over?`<span class="pill amber">Overpaid ${egp(m.over)}</span>`:m.remain>0?`<span class="pill">${egp(m.remain)}</span>`:'<span class="pill green">Fully paid</span>'}</div></div></div>
+   <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method / to</th><th>Note</th><th>By</th><th>Screenshot</th></tr></thead><tbody>
+    ${depRows}${rp.map(p=>row(p.pay_date,esc(PAYKIND[p.kind]||p.kind),nf(p.amount),p.method,p.received_on,p.note,pname(p.by),proofCell(p.proof_path,'round',p.id))).join('')}
+    ${!depRows&&!rp.length?'<tr><td colspan="7" class="empty">No payments recorded yet</td></tr>':''}</tbody></table></div>
+   <h3 style="margin:12px 0 8px">Add a payment (installment / the rest)</h3>
+   <div class="row"><div class="field"><label for="rp-kind">Type</label><select class="inp" id="rp-kind">${Object.entries(PAYKIND).map(([k,t])=>`<option value="${k}" ${k===(m.remain>0&&e.plan&&/قسط/.test(e.plan)?'installment':'remaining')?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="field"><label for="rp-amt">Amount (EGP) <i>*</i></label><input type="number" min="1" class="inp num" id="rp-amt" value="${esc(def)}"></div>
+    <div class="field"><label for="rp-date">Date</label><input type="date" class="inp" id="rp-date" value="${today()}"></div></div>
+   <div class="row"><div class="field"><label for="rp-meth">Method</label><select class="inp" id="rp-meth">${[...METHODS,'Cash'].map(x=>`<option>${x}</option>`).join('')}</select></div>
+    <div class="field"><label for="rp-to">Paid to (wallet / InstaPay number)</label><input class="inp" id="rp-to" placeholder="01080316147 / ادهم"></div></div>
+   <div class="row"><div class="field"><label for="rp-note">Note</label><input class="inp ar" dir="auto" id="rp-note"></div>${proofInput('rp-proof')}</div>
+   <div class="row" style="margin-top:8px"><button class="btn pri" data-act="rd-pay-save" data-id="${e.id}">Save payment</button></div>`}
+async function saveRoundPay(id){const amt=+$('#rp-amt').value;if(!(amt>0)){toast('Enter the amount');$('#rp-amt').focus();return}
+  const ok=await guard(async()=>{const proof=await uploadProof('rp-proof','round');
+    await Q(S.sb.from('round_payments').insert({entry_id:id,kind:$('#rp-kind').value,amount:amt,method:$('#rp-meth').value,received_on:$('#rp-to').value.trim()||null,pay_date:$('#rp-date').value||today(),note:$('#rp-note').value.trim()||null,proof_path:proof,by:S.me.id}))},'Payment saved ✓');
+  if(!ok)return;await refreshRoundEnts(true);const e=S.d.rounds.ents.find(x=>x.id===id);if(e)fillEntryPays(e)}
 function readEntry(){const g=k=>{const el=$('#re-'+k);return el?el.value.trim():''};
   const rn=(S.d.rounds.rounds.find(x=>x.id===S.rd.round)||{}).name;
   const v={notes:g('notes')||null,email:g('email')||null,ref:g('ref')||null,location:locKey(g('location'))||null,group_id:matchGroup(rn,g('location')),status:$('#re-status').value,updated_at:nowISO(),updated_by:S.me.id};
@@ -1539,6 +1598,7 @@ async function roundsClick(act,a,id){
   else if(act==='rd-defer'){const to=+$('#re-to').value;if(!to){toast('Pick the round to defer to');return}const e=D.ents.find(x=>x.id===+id);const from=D.rounds.find(r=>r.id===S.rd.round),tgt=D.rounds.find(r=>r.id===to);
     /* one person = one row: the student moves to the new round with all their details, and leaves this one */
     if(await guard(()=>Q(S.sb.from('round_entries').update({round_id:to,status:'Deferred in',group_id:null,location:null,notes:[e.notes,'تأجيل من '+from.name].filter(Boolean).join(' / '),updated_at:nowISO(),updated_by:S.me.id}).eq('id',e.id)),'Moved to '+tgt.name+' ✓')){closeModal();loadView()}}
+  else if(act==='rd-pay-save'){a.disabled=true;await saveRoundPay(+id);a.disabled=false}
   else if(act==='rd-xlsx')exportRoundXlsx();
   else if(act==='rd-log')roundLogModal();
   else if(act==='rd-import')importModal();
@@ -1942,6 +2002,9 @@ document.addEventListener('click',async e=>{
   else if(act==='pay-add'){e.stopPropagation();payModal(id,a.dataset.l,'payment')}
   else if(act==='refund'){e.stopPropagation();payModal(id,a.dataset.l,a.dataset.k)}
   else if(act==='pay-save'){a.disabled=true;await savePay();a.disabled=false}
+  else if(act==='proof-view'){e.stopPropagation();openProof(a.dataset.p)}
+  else if(act==='proof-attach'){e.stopPropagation();proofAttachModal(a.dataset.t,a.dataset.id)}
+  else if(act==='proof-attach-save'){a.disabled=true;await saveProofAttach();a.disabled=false}
   else if(act==='res-csv'){const R=S.d.res||[];csvDownload('reservations-'+today()+'.csv',[['Contract','Client','Phone','Agent','Course','Group','Attendance','Price','Paid (net)','Refunded','Refund due','Remaining','First payment','Method','Date','Status'],...R.map(r=>{const b=resBalance(r);return [r.code,r.client_name,r.phone,pname(r.agent_id),r.course,r.group_id?groupName(r.group_id):'',r.attendance,r.price??'',r.amount,r.refunded||0,b.over||'',b.remain||'',r.payment,r.method,r.res_date,r.status]})])}
   // reports
   else if(act==='rep-add')reportModal(null);
