@@ -1412,7 +1412,7 @@ async function fillEntryPays(e){const box=$('#re-pays');if(!box)return;
   box.innerHTML=`<h3 style="margin-bottom:8px">Payments</h3>
    <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(110px,1fr));margin-bottom:10px">${kpi('Course price',m.price!=null?egp(m.price):'—')}${kpi('Paid at booking',egp(m.dep))}${kpi('Paid later',egp(m.more))}<div class="kpi"><span>Remaining</span><div style="margin-top:6px">${m.price==null?'<span class="hint">Write the price in Plan</span>':m.over?`<span class="pill amber">Overpaid ${egp(m.over)}</span>`:m.remain>0?`<span class="pill">${egp(m.remain)}</span>`:'<span class="pill green">Fully paid</span>'}</div></div></div>
    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method / to</th><th>Note</th><th>By</th><th>Screenshot</th></tr></thead><tbody>
-    ${depRows}${rp.map(p=>row(p.pay_date,esc(PAYKIND[p.kind]||p.kind),nf(p.amount),p.method,p.received_on,p.note,pname(p.by),proofCell(p.proof_path,'round',p.id))).join('')}
+    ${depRows}${rp.map(p=>row(p.pay_date,esc(PAYKIND[p.kind]||SLOT_T[p.kind]||p.kind),p.amount?nf(p.amount):'—',p.method,p.received_on,p.note,pname(p.by),proofCell(p.proof_path,'round',p.id))).join('')}
     ${!depRows&&!rp.length?'<tr><td colspan="7" class="empty">No payments recorded yet</td></tr>':''}</tbody></table></div>
    <h3 style="margin:12px 0 8px">Add a payment (installment / the rest)</h3>
    <div class="row"><div class="field"><label for="rp-kind">Type</label><select class="inp" id="rp-kind">${Object.entries(PAYKIND).map(([k,t])=>`<option value="${k}" ${k===(m.remain>0&&e.plan&&/قسط/.test(e.plan)?'installment':'remaining')?'selected':''}>${t}</option>`).join('')}</select></div>
@@ -1680,7 +1680,8 @@ async function loadMentoring(){
   const [mg,cnt]=await Promise.all([Q(S.sb.from('mentor_groups').select('mentor_id,group_id')),Q(S.sb.rpc('mentor_group_counts'))]);
   const counts={};(cnt||[]).forEach(c=>counts[c.group_id]=c);
   S.d.mt={mg,counts,students:null,updates:null};
-  if(S.mt.group){const [st,up]=await Promise.all([Q(S.sb.rpc('mentor_group_students',{p_group:S.mt.group})),Q(S.sb.rpc('mentor_group_updates',{p_group:S.mt.group,p_limit:300}))]);S.d.mt.students=st;S.d.mt.updates=up}
+  if(S.mt.group){const [st,up,pay]=await Promise.all([Q(S.sb.rpc('mentor_group_students',{p_group:S.mt.group})),Q(S.sb.rpc('mentor_group_updates',{p_group:S.mt.group,p_limit:300})),Q(S.sb.rpc('mentor_group_pay',{p_group:S.mt.group})).catch(()=>[])]);
+    S.d.mt.students=st;S.d.mt.updates=up;S.d.mt.pay=Object.fromEntries((pay||[]).map(p=>[p.entry_id,p]))}
 }
 function mtVisibleGroups(){const D=S.d.mt;let gs=S.groups.slice();
   if(S.me.role==='mentor'){const mine=new Set(D.mg.filter(x=>x.mentor_id===S.me.id).map(x=>x.group_id));gs=gs.filter(g=>mine.has(g.id))}
@@ -1691,7 +1692,7 @@ function mentoringView(){
   const D=S.d.mt;if(!D||!S.mt)return '<div class="empty"><span class="spin"></span></div>';
   if(S.mt.group)return mtGroupView(D);
   const mgr=canManageMentors();const tab=mgr?S.mt.tab:'groups';
-  const head=`<div class="head"><div><h1>${S.me.role==='mentor'?'My groups':'Groups & mentors'}</h1><div class="sub">${S.me.role==='mentor'?'The groups you follow. You can see the students and every update in the group; changes are made by the operations team.':'Every group, read-only. Choose which groups each mentor follows from the Mentors tab.'}</div></div></div>
+  const head=`<div class="head"><div><h1>${S.me.role==='mentor'?'My groups':'Groups & mentors'}</h1><div class="sub">${S.me.role==='mentor'?'The groups you follow. You see the students and every update in the group, and you upload the transfer screenshot of each installment. Other changes are made by the operations team.':'Every group, read-only. Choose which groups each mentor follows from the Mentors tab.'}</div></div></div>
    ${mgr?`<div class="tabs"><button data-act="mt-tab" data-k="groups" class="${tab==='groups'?'on':''}">Groups</button><button data-act="mt-tab" data-k="mentors" class="${tab==='mentors'?'on':''}">Mentors · ${mentorsOf().filter(m=>m.active).length}</button></div>`:''}`;
   if(tab==='mentors')return head+mtMentorsView(D);
   const gs=mtVisibleGroups();const by={};gs.forEach(g=>{const k=locKey(g.name);(by[k]=by[k]||[]).push(g)});
@@ -1735,10 +1736,10 @@ function mtGroupView(D){const g=S.groups.find(x=>x.id===S.mt.group)||{name:'Grou
   const st=(D.students||[]).filter(s=>!q||AR([s.name,s.phone,s.email].join(' ')).toLowerCase().includes(q));
   const inn=st.filter(s=>['Active','Deferred in'].includes(s.status)),out=st.filter(s=>!['Active','Deferred in'].includes(s.status));
   const ms=D.mg.filter(x=>x.group_id===g.id).map(x=>pname(x.mentor_id));
-  const tbl=(list,emptyMsg)=>`<div class="tbl-wrap"><table class="cards"><thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Email</th><th>Status</th><th>Booked</th></tr></thead><tbody>
-    ${list.map((s,i)=>`<tr style="${RST[s.status]?.bg?'background:'+RST[s.status].bg:''}"><td class="n">${i+1}</td><td data-l="Name" class="ar" dir="auto"><b>${esc(s.name||'')}</b></td><td data-l="Mobile" class="num">${esc(s.phone||'')}</td><td data-l="Email">${esc(s.email||'')}</td><td data-l="Status"><span class="rst" style="background:${RST[s.status]?.bd||'#999'}"></span>${esc(s.status)}</td><td data-l="Booked" class="num">${esc(s.booked_on||'')}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">${emptyMsg}</td></tr>`}</tbody></table></div>`;
+  const tbl=(list,emptyMsg)=>`<div class="tbl-wrap"><table class="cards"><thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Email</th><th>Status</th><th>Booked</th><th>Payments (screenshots)</th></tr></thead><tbody>
+    ${list.map((s,i)=>`<tr style="${RST[s.status]?.bg?'background:'+RST[s.status].bg:''}"><td class="n">${i+1}</td><td data-l="Name" class="ar" dir="auto"><b>${esc(s.name||'')}</b></td><td data-l="Mobile" class="num">${esc(s.phone||'')}</td><td data-l="Email">${esc(s.email||'')}</td><td data-l="Status"><span class="rst" style="background:${RST[s.status]?.bd||'#999'}"></span>${esc(s.status)}</td><td data-l="Booked" class="num">${esc(s.booked_on||'')}</td><td data-l="Payments">${mtPayCell(s.id)}</td></tr>`).join('')||`<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`}</tbody></table></div>`;
   return `<div class="head"><div><div class="hint"><a href="#mentoring" data-act="mt-back">← ${S.me.role==='mentor'?'My groups':'All groups'}</a></div><h1 class="ar" dir="auto">${esc(g.name)} · ${esc(mtGroupLabel(g))}</h1>
-    <div class="sub">${esc(g.course||'')}${g.start_date?' · starts '+fmtDay(g.start_date):''} · <b>${plural(inn.length,'student')} attending</b>${ms.length?' · Mentor: <span class="ar">'+ms.map(esc).join('، ')+'</span>':''} · read-only</div></div></div>
+    <div class="sub">${esc(g.course||'')}${g.start_date?' · starts '+fmtDay(g.start_date):''} · <b>${plural(inn.length,'student')} attending</b>${ms.length?' · Mentor: <span class="ar">'+ms.map(esc).join('، ')+'</span>':''} · upload the transfer screenshots from the Payments column</div></div></div>
    <div class="row" style="margin-bottom:10px"><input class="inp" data-in="mtq" id="mt-q" placeholder="Search name, mobile, email…" value="${esc(S.mt.q||'')}" style="max-width:320px"></div>
    <div class="grid2" style="display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;align-items:start">
     <div>${tbl(inn,'No students attending in this group yet')}
@@ -1746,7 +1747,32 @@ function mtGroupView(D){const g=S.groups.find(x=>x.id===S.mt.group)||{name:'Grou
     <div class="card"><h3 style="margin-bottom:8px">Updates</h3><div class="hint" style="margin-bottom:8px">Who joined, left, moved or changed status in this group, newest first.</div>
      <div class="timeline" style="max-height:70vh;overflow:auto">${(D.updates||[]).map(mtUpdateLine).join('')||'<div class="empty">No updates yet</div>'}</div></div>
    </div>`}
+/* payment screenshots by mentors: Installments → 3 slots, Cash → 1 slot; the plan can be switched */
+const SLOT_T={inst1:'Installment 1',inst2:'Installment 2',inst3:'Installment 3',cash:'Cash (full amount)'};
+const mtPlanOf=p=>p?(p.pay_plan||p.plan_guess||''):'';
+function mtPayCell(eid){const p=(S.d.mt.pay||{})[eid]||{entry_id:eid,slots:{}};const plan=mtPlanOf(p);const sl=p.slots||{};
+  const keys=plan==='inst'?['inst1','inst2','inst3']:plan==='cash'?['cash']:[];
+  const extra=Object.keys(sl).filter(k=>!keys.includes(k));
+  const chip=(k,lbl)=>{const f=sl[k];return `<button class="btn sm${f?' ok':''}" style="${f?'background:#dcfce7;border-color:#16a34a;color:#166534':''}" data-act="mt-proof" data-id="${eid}" data-k="${k}" title="${SLOT_T[k]}${f?' · uploaded '+(f.date?fmtDay(f.date):'')+(f.by?' by '+esc(f.by):''):' · upload the screenshot'}">${f?'✓':'+'} ${lbl}</button>`};
+  return `<div class="row" style="gap:4px;flex-wrap:wrap"><select class="inp" style="width:auto;padding:4px 8px;font-size:13px" data-ch="mt-plan" data-id="${eid}">${plan?'':'<option value="">Plan…</option>'}<option value="cash" ${plan==='cash'?'selected':''}>Cash</option><option value="inst" ${plan==='inst'?'selected':''}>Installments</option></select>
+    ${keys.map(k=>chip(k,k==='cash'?'Cash':k.slice(-1))).join('')}${extra.map(k=>chip(k,k==='cash'?'Cash':'Inst '+k.slice(-1))).join('')}</div>`}
+function mtProofModal(eid,k){const st=(S.d.mt.students||[]).find(x=>x.id===eid)||{};const p=(S.d.mt.pay||{})[eid]||{slots:{}};const f=(p.slots||{})[k];
+  S.modal={type:'mtproof',eid,k};
+  openModal(`${mhead(esc(SLOT_T[k])+' · <span class="ar">'+esc(st.name||'')+'</span>')}<div class="mb">
+   ${f?`<div class="card" style="background:var(--bg)"><div class="row"><span class="pill green">Uploaded</span><span class="hint">${f.date?fmtDay(f.date):''}${f.by?' · by '+esc(f.by):''}${f.amount?' · '+egp(f.amount):''}</span><div class="sp"></div><button class="btn sm" data-act="proof-view" data-p="${esc(f.proof)}">📎 View</button></div><div class="hint" style="margin-top:6px">Uploading a new one replaces it.</div></div>`:''}
+   ${proofInput('mp-file',f?'New screenshot':'Transfer screenshot <i>*</i>')}
+   <div class="row"><div class="field"><label for="mp-amt">Amount (EGP, optional)</label><input type="number" min="1" class="inp num" id="mp-amt" value="${f&&f.amount?esc(f.amount):''}"></div>
+    <div class="field"><label for="mp-date">Paid on</label><input type="date" class="inp" id="mp-date" value="${f&&f.date?f.date:today()}"></div></div>
+  </div><div class="mf"><button class="btn pri" data-act="mt-proof-save">Save</button><button class="btn" data-act="close">Cancel</button></div>`)}
+async function mtProofSave(){const m=S.modal;const el=$('#mp-file');if(!el.files||!el.files[0]){toast('Choose the screenshot');return}
+  const amt=$('#mp-amt').value?+$('#mp-amt').value:null;if(amt!=null&&!(amt>0)){toast('The amount must be more than 0');return}
+  const ok=await guard(async()=>{const path=await uploadProof('mp-file','mentor/'+m.eid);
+    await Q(S.sb.rpc('mentor_add_proof',{p_entry:m.eid,p_kind:m.k,p_path:path,p_amount:amt,p_date:$('#mp-date').value||null}))},'Screenshot saved ✓');
+  if(ok){closeModal();await mtReloadPay()}}
+async function mtReloadPay(){const pay=await Q(S.sb.rpc('mentor_group_pay',{p_group:S.mt.group})).catch(()=>null);if(pay)S.d.mt.pay=Object.fromEntries(pay.map(p=>[p.entry_id,p]));render()}
 async function mentoringClick(act,a,id){
+  if(act==='mt-proof'){mtProofModal(+id,a.dataset.k);return}
+  if(act==='mt-proof-save'){a.disabled=true;await mtProofSave();a.disabled=false;return}
   if(act==='mt-tab'){S.mt.tab=a.dataset.k;render()}
   else if(act==='mt-old'){S.mt.old=a.checked;render()}
   else if(act==='mt-open'){S.mt.group=+id;S.mt.q='';loadView()}
@@ -2019,6 +2045,7 @@ document.addEventListener('change',async e=>{
   else if(k.startsWith('resf.')){S.resf[k.slice(5)]=el.value;loadView()}
   else if(k.startsWith('imp.')){impState()[k.slice(4)]=el.value;render()}
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
+  else if(k==='mt-plan'){if(!el.value)return;const ok=await guard(()=>Q(S.sb.rpc('mentor_set_plan',{p_entry:+el.dataset.id,p_plan:el.value})),el.value==='inst'?'Installments · 3 slots ✓':'Cash · 1 slot ✓');await mtReloadPay()}
   else if(k==='rd-st'){S.rd.st=el.value;render()}
   else if(k==='rd-ag'){S.rd.ag=el.value;render()}
   else if(k==='ab-round'){S.ab.round=+el.value;S.ab.open=null;await loadAgentBook();render()}
