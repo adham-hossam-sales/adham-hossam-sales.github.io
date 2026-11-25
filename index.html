@@ -1679,7 +1679,8 @@ async function loadMentoring(){
   if(!S.mt)S.mt={tab:'groups',group:null,q:'',old:false};
   const [mg,cnt]=await Promise.all([Q(S.sb.from('mentor_groups').select('mentor_id,group_id')),Q(S.sb.rpc('mentor_group_counts'))]);
   const counts={};(cnt||[]).forEach(c=>counts[c.group_id]=c);
-  S.d.mt={mg,counts,students:null,updates:null};
+  S.d.mt={mg,counts,students:null,updates:null,fin:null};
+  if(!S.mt.group&&S.mt.tab==='finance'&&canManageMentors())S.d.mt.fin=await Q(S.sb.rpc('mentor_finance'));
   if(S.mt.group){const [st,up,pay]=await Promise.all([Q(S.sb.rpc('mentor_group_students',{p_group:S.mt.group})),Q(S.sb.rpc('mentor_group_updates',{p_group:S.mt.group,p_limit:300})),Q(S.sb.rpc('mentor_group_pay',{p_group:S.mt.group})).catch(()=>[])]);
     S.d.mt.students=st;S.d.mt.updates=up;S.d.mt.pay=Object.fromEntries((pay||[]).map(p=>[p.entry_id,p]))}
 }
@@ -1692,9 +1693,10 @@ function mentoringView(){
   const D=S.d.mt;if(!D||!S.mt)return '<div class="empty"><span class="spin"></span></div>';
   if(S.mt.group)return mtGroupView(D);
   const mgr=canManageMentors();const tab=mgr?S.mt.tab:'groups';
-  const head=`<div class="head"><div><h1>${S.me.role==='mentor'?'My groups':'Groups & mentors'}</h1><div class="sub">${S.me.role==='mentor'?'The groups you follow. You see the students and every update in the group, and you upload the transfer screenshot of each installment. Other changes are made by the operations team.':'Every group, read-only. Choose which groups each mentor follows from the Mentors tab.'}</div></div></div>
-   ${mgr?`<div class="tabs"><button data-act="mt-tab" data-k="groups" class="${tab==='groups'?'on':''}">Groups</button><button data-act="mt-tab" data-k="mentors" class="${tab==='mentors'?'on':''}">Mentors · ${mentorsOf().filter(m=>m.active).length}</button></div>`:''}`;
+  const head=`<div class="head"><div><h1>${S.me.role==='mentor'?'My groups':'Groups & mentors'}</h1><div class="sub">${S.me.role==='mentor'?'The groups you follow. You see the students and every update in the group, and you upload the transfer screenshot of each installment. Other changes are made by the operations team.':'Every group: students, updates, payment screenshots and due dates. Mark a student withdrawn or deferred from their status, choose the groups of each mentor from Mentors, and follow the money in Finance.'}</div></div></div>
+   ${mgr?`<div class="tabs"><button data-act="mt-tab" data-k="groups" class="${tab==='groups'?'on':''}">Groups</button><button data-act="mt-tab" data-k="mentors" class="${tab==='mentors'?'on':''}">Mentors · ${mentorsOf().filter(m=>m.active).length}</button><button data-act="mt-tab" data-k="finance" class="${tab==='finance'?'on':''}">Finance</button></div>`:''}`;
   if(tab==='mentors')return head+mtMentorsView(D);
+  if(tab==='finance')return head+mtFinanceView(D);
   const gs=mtVisibleGroups();const by={};gs.forEach(g=>{const k=locKey(g.name);(by[k]=by[k]||[]).push(g)});
   const who=gid=>D.mg.filter(x=>x.group_id===gid).map(x=>pname(x.mentor_id));
   return head+`${S.me.role!=='mentor'?`<div class="row" style="margin-bottom:10px"><label class="check"><input type="checkbox" data-act="mt-old" ${S.mt.old?'checked':''}><span>Show finished / inactive groups too</span></label></div>`:''}
@@ -1737,7 +1739,7 @@ function mtGroupView(D){const g=S.groups.find(x=>x.id===S.mt.group)||{name:'Grou
   const inn=st.filter(s=>['Active','Deferred in'].includes(s.status)),out=st.filter(s=>!['Active','Deferred in'].includes(s.status));
   const ms=D.mg.filter(x=>x.group_id===g.id).map(x=>pname(x.mentor_id));
   const tbl=(list,emptyMsg)=>`<div class="tbl-wrap"><table class="cards"><thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Email</th><th>Status</th><th>Booked</th><th>Payments (screenshots)</th></tr></thead><tbody>
-    ${list.map((s,i)=>`<tr style="${RST[s.status]?.bg?'background:'+RST[s.status].bg:''}"><td class="n">${i+1}</td><td data-l="Name" class="ar" dir="auto"><b>${esc(s.name||'')}</b></td><td data-l="Mobile" class="num">${esc(s.phone||'')}</td><td data-l="Email">${esc(s.email||'')}</td><td data-l="Status"><span class="rst" style="background:${RST[s.status]?.bd||'#999'}"></span>${esc(s.status)}</td><td data-l="Booked" class="num">${esc(s.booked_on||'')}</td><td data-l="Payments">${mtPayCell(s.id)}</td></tr>`).join('')||`<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`}</tbody></table></div>`;
+    ${list.map((s,i)=>`<tr style="${RST[s.status]?.bg?'background:'+RST[s.status].bg:''}"><td class="n">${i+1}</td><td data-l="Name" class="ar" dir="auto"><b>${esc(s.name||'')}</b></td><td data-l="Mobile" class="num">${esc(s.phone||'')}</td><td data-l="Email">${esc(s.email||'')}</td><td data-l="Status">${mtStatusCell(s)}</td><td data-l="Booked" class="num">${esc(s.booked_on||'')}</td><td data-l="Payments">${mtPayCell(s.id)}</td></tr>`).join('')||`<tr><td colspan="7" class="empty">${emptyMsg}</td></tr>`}</tbody></table></div>`;
   return `<div class="head"><div><div class="hint"><a href="#mentoring" data-act="mt-back">← ${S.me.role==='mentor'?'My groups':'All groups'}</a></div><h1 class="ar" dir="auto">${esc(g.name)} · ${esc(mtGroupLabel(g))}</h1>
     <div class="sub">${esc(g.course||'')}${g.start_date?' · starts '+fmtDay(g.start_date):''} · <b>${plural(inn.length,'student')} attending</b>${ms.length?' · Mentor: <span class="ar">'+ms.map(esc).join('، ')+'</span>':''} · upload the transfer screenshots from the Payments column</div></div></div>
    <div class="row" style="margin-bottom:10px"><input class="inp" data-in="mtq" id="mt-q" placeholder="Search name, mobile, email…" value="${esc(S.mt.q||'')}" style="max-width:320px"></div>
@@ -1753,27 +1755,91 @@ const mtPlanOf=p=>p?(p.pay_plan||p.plan_guess||''):'';
 function mtPayCell(eid){const p=(S.d.mt.pay||{})[eid]||{entry_id:eid,slots:{}};const plan=mtPlanOf(p);const sl=p.slots||{};
   const keys=plan==='inst'?['inst1','inst2','inst3']:plan==='cash'?['cash']:[];
   const extra=Object.keys(sl).filter(k=>!keys.includes(k));
-  const chip=(k,lbl)=>{const f=sl[k];return `<button class="btn sm${f?' ok':''}" style="${f?'background:#dcfce7;border-color:#16a34a;color:#166534':''}" data-act="mt-proof" data-id="${eid}" data-k="${k}" title="${SLOT_T[k]}${f?' · uploaded '+(f.date?fmtDay(f.date):'')+(f.by?' by '+esc(f.by):''):' · upload the screenshot'}">${f?'✓':'+'} ${lbl}</button>`};
+  const due=p.inst_due||{};const st=(S.d.mt.students||[]).find(x=>x.id===eid);const attending=!st||['Active','Deferred in'].includes(st.status);
+  const chip=(k,lbl)=>{const f=sl[k],d=due[k];const late=!f&&d&&d<today()&&attending;
+    const sty=f?'background:#dcfce7;border-color:#16a34a;color:#166534':late?'background:#fee2e2;border-color:#dc2626;color:#991b1b':'';
+    const sub=f?(f.date?' · '+fmtDay(f.date):''):d?(late?' · late since ':' · due ')+fmtDay(d):'';
+    return `<button class="btn sm" style="${sty}" data-act="mt-proof" data-id="${eid}" data-k="${k}" title="${SLOT_T[k]}${f?' · paid '+(f.date?fmtDay(f.date):'')+(f.by?' · uploaded by '+esc(f.by):''):late?' · NOT PAID — was due '+fmtDay(d):d?' · due '+fmtDay(d):' · upload the screenshot'}">${f?'✓':late?'!':'+'} ${lbl}${sub}</button>`};
   return `<div class="row" style="gap:4px;flex-wrap:wrap"><select class="inp" style="width:auto;padding:4px 8px;font-size:13px" data-ch="mt-plan" data-id="${eid}">${plan?'':'<option value="">Plan…</option>'}<option value="cash" ${plan==='cash'?'selected':''}>Cash</option><option value="inst" ${plan==='inst'?'selected':''}>Installments</option></select>
     ${keys.map(k=>chip(k,k==='cash'?'Cash':k.slice(-1))).join('')}${extra.map(k=>chip(k,k==='cash'?'Cash':'Inst '+k.slice(-1))).join('')}</div>`}
 function mtProofModal(eid,k){const st=(S.d.mt.students||[]).find(x=>x.id===eid)||{};const p=(S.d.mt.pay||{})[eid]||{slots:{}};const f=(p.slots||{})[k];
   S.modal={type:'mtproof',eid,k};
   openModal(`${mhead(esc(SLOT_T[k])+' · <span class="ar">'+esc(st.name||'')+'</span>')}<div class="mb">
    ${f?`<div class="card" style="background:var(--bg)"><div class="row"><span class="pill green">Uploaded</span><span class="hint">${f.date?fmtDay(f.date):''}${f.by?' · by '+esc(f.by):''}${f.amount?' · '+egp(f.amount):''}</span><div class="sp"></div><button class="btn sm" data-act="proof-view" data-p="${esc(f.proof)}">📎 View</button></div><div class="hint" style="margin-top:6px">Uploading a new one replaces it.</div></div>`:''}
-   ${proofInput('mp-file',f?'New screenshot':'Transfer screenshot <i>*</i>')}
+   <div class="field"><label for="mp-due">Due date (when this ${k==='cash'?'payment':'installment'} should be paid)</label><input type="date" class="inp" id="mp-due" value="${esc((p.inst_due||{})[k]||'')}" style="max-width:220px"><div class="hint">If the date passes with no screenshot, it turns red as late.</div></div>
+   ${proofInput('mp-file',f?'New screenshot':'Transfer screenshot')}
    <div class="row"><div class="field"><label for="mp-amt">Amount (EGP, optional)</label><input type="number" min="1" class="inp num" id="mp-amt" value="${f&&f.amount?esc(f.amount):''}"></div>
-    <div class="field"><label for="mp-date">Paid on</label><input type="date" class="inp" id="mp-date" value="${f&&f.date?f.date:today()}"></div></div>
+    <div class="field"><label for="mp-date">Paid on <i>*</i></label><input type="date" class="inp" id="mp-date" value="${f&&f.date?f.date:today()}"></div></div>
   </div><div class="mf"><button class="btn pri" data-act="mt-proof-save">Save</button><button class="btn" data-act="close">Cancel</button></div>`)}
-async function mtProofSave(){const m=S.modal;const el=$('#mp-file');if(!el.files||!el.files[0]){toast('Choose the screenshot');return}
-  const amt=$('#mp-amt').value?+$('#mp-amt').value:null;if(amt!=null&&!(amt>0)){toast('The amount must be more than 0');return}
-  const ok=await guard(async()=>{const path=await uploadProof('mp-file','mentor/'+m.eid);
-    await Q(S.sb.rpc('mentor_add_proof',{p_entry:m.eid,p_kind:m.k,p_path:path,p_amount:amt,p_date:$('#mp-date').value||null}))},'Screenshot saved ✓');
+async function mtProofSave(){const m=S.modal;const el=$('#mp-file');const hasFile=el.files&&el.files[0];
+  const p=(S.d.mt.pay||{})[m.eid]||{};const oldDue=(p.inst_due||{})[m.k]||'',newDue=$('#mp-due').value||'';
+  if(!hasFile&&oldDue===newDue){toast('Choose the screenshot or set the due date');return}
+  const amt=$('#mp-amt').value?+$('#mp-amt').value:null;if(hasFile&&amt!=null&&!(amt>0)){toast('The amount must be more than 0');return}
+  if(hasFile&&!$('#mp-date').value){toast('Write the payment date');return}
+  const ok=await guard(async()=>{if(oldDue!==newDue)await Q(S.sb.rpc('mentor_set_due',{p_entry:m.eid,p_kind:m.k,p_date:newDue||null}));
+    if(hasFile){const path=await uploadProof('mp-file','mentor/'+m.eid);
+    await Q(S.sb.rpc('mentor_add_proof',{p_entry:m.eid,p_kind:m.k,p_path:path,p_amount:amt,p_date:$('#mp-date').value||null}))}},hasFile?'Screenshot saved ✓':'Due date saved ✓');
   if(ok){closeModal();await mtReloadPay()}}
+/* status: the Team Leader Mentor can mark a student withdrawn (red) or deferred (orange), with the reason */
+const canMtStatus=()=>isAdmin()||S.me.role==='mentor_tl'||(S.me.role!=='mentor'&&S.me.rounds_access);
+const WD_REASONS=['لم يدفع القسط (didn\'t pay)','طلب السحب (asked to withdraw)','ظروف شخصية (personal reasons)'];
+function mtStatusCell(s){const p=(S.d.mt.pay||{})[s.id]||{};
+  return `<span class="rst" style="background:${RST[s.status]?.bd||'#999'}"></span>${esc(s.status)}${p.status_reason?`<div class="hint ar" dir="auto" title="${p.status_set_at?fmtWhen(p.status_set_at):''}${p.status_by?' · '+esc(p.status_by):''}">${esc(p.status_reason)}</div>`:''}${canMtStatus()?`<div><button class="btn sm" style="margin-top:4px" data-act="mt-status" data-id="${s.id}">Change</button></div>`:''}`}
+function mtStatusModal(eid){const st=(S.d.mt.students||[]).find(x=>x.id===eid)||{};const p=(S.d.mt.pay||{})[eid]||{};S.modal={type:'mtstatus',eid};
+  const opt=(v,t,c,sub)=>`<label class="check" style="padding:8px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px"><input type="radio" name="ms-st" value="${v}" ${st.status===v?'checked':''}><span><span class="rst" style="background:${c}"></span><b>${t}</b><span class="hint" style="display:block">${sub}</span></span></label>`;
+  openModal(`${mhead('Status · <span class="ar">'+esc(st.name||'')+'</span>')}<div class="mb">
+   ${opt('Withdrawn','Withdrawn (red)',RST.Withdrawn?.bd||'#dc2626','Counted with the people who withdrew — e.g. didn\'t pay the installment')}
+   ${opt('Deferred out','Deferred (orange)',RST['Deferred out']?.bd||'#ea580c','Postponed to a later round. The rounds team moves them to the new round.')}
+   ${opt('Active','Attending (back to active)',RST.Active?.bd||'#16a34a','Undo — the student attends this group again')}
+   <div class="field"><label for="ms-why">Reason <i>*</i></label><select class="inp" id="ms-pick" data-act-ch="ms-pick"><option value="">Choose…</option>${WD_REASONS.map(r=>`<option>${r}</option>`).join('')}<option value="__other">Other…</option></select>
+    <input class="inp ar" dir="auto" id="ms-why" style="margin-top:6px" placeholder="Write the reason (e.g. didn't pay installment 2 / deferred to Round 44)" value="${esc(p.status_reason||'')}"></div>
+  </div><div class="mf"><button class="btn pri" data-act="mt-status-save">Save</button><button class="btn" data-act="close">Cancel</button></div>`)}
+async function mtStatusSave(){const m=S.modal;const v=(document.querySelector('input[name=ms-st]:checked')||{}).value;if(!v){toast('Choose the status');return}
+  const why=$('#ms-why').value.trim();if(v!=='Active'&&!why){toast('Write the reason');$('#ms-why').focus();return}
+  const ok=await guard(()=>Q(S.sb.rpc('mentor_set_status',{p_entry:m.eid,p_status:v,p_reason:why||null})),v==='Withdrawn'?'Marked withdrawn ✓':v==='Deferred out'?'Marked deferred ✓':'Back to attending ✓');
+  if(ok){closeModal();loadView()}}
+/* Finance: payments, late installments, withdrawals and deferrals per group */
+function mtFinRows(D){const t=today();return (D.fin||[]).map(r=>{const plan=r.pay_plan||r.plan_guess||'';const keys=plan==='inst'?['inst1','inst2','inst3']:plan==='cash'?['cash']:[];
+  const sl=r.slots||{},due=r.inst_due||{};const att=['Active','Deferred in'].includes(r.status);
+  const late=att?keys.filter(k=>!sl[k]&&due[k]&&due[k]<t).map(k=>({k,due:due[k]})):[];
+  const collected=Object.values(sl).reduce((a,x)=>a+(+x.amount||0),0);
+  return {...r,planK:plan,keys,att,late,collected,paidN:keys.filter(k=>sl[k]).length,price:planPrice(r.plan)}})}
+function mtFinanceView(D){if(!D.fin)return '<div class="empty"><span class="spin"></span></div>';
+  const rounds=[...new Set(D.fin.map(r=>r.round_name).filter(Boolean))].sort((a,b)=>rnum(b)-rnum(a));const rsel=S.mt.finRound||'';
+  const R=mtFinRows(D).filter(r=>!rsel||r.round_name===rsel);const G={};R.forEach(r=>{(G[r.group_id]=G[r.group_id]||[]).push(r)});
+  const att=R.filter(r=>r.att),wd=R.filter(r=>r.status==='Withdrawn'),df=R.filter(r=>r.status==='Deferred out'),nopay=wd.filter(r=>/دفع|pay/i.test(r.status_reason||''));
+  const exp=att.reduce((a,r)=>a+r.keys.length,0),got=att.reduce((a,r)=>a+r.paidN,0),lateL=att.flatMap(r=>r.late.map(l=>({...l,r}))).sort((a,b)=>a.due.localeCompare(b.due));
+  const sum=list=>list.reduce((a,r)=>a+r.collected,0);const cnt=(list,k)=>`${list.filter(r=>r.att&&r.keys.includes(k)&&(r.slots||{})[k]).length}/${list.filter(r=>r.att&&r.keys.includes(k)).length}`;
+  const gname=id=>{const g=S.groups.find(x=>x.id===id);return g?`${g.name} · ${mtGroupLabel(g)}`:'—'};
+  const moved=[...wd,...df].sort((a,b)=>String(b.status_set_at||'').localeCompare(String(a.status_set_at||'')));
+  return `<div class="row" style="margin-bottom:10px"><select class="inp" data-ch="mt-finr" style="max-width:220px"><option value="">All rounds</option>${rounds.map(r=>`<option ${r===rsel?'selected':''}>${esc(r)}</option>`).join('')}</select><div class="sp"></div><button class="btn" data-act="mt-fin-xls">⬇ Excel</button></div>
+   <div class="kpis">${kpi('Attending',nf(att.length))}${kpi('Screenshots in',`${nf(got)} / ${nf(exp)}`,exp?Math.round(got/exp*100)+'% of the installments due':'')}${kpi('Late installments',nf(lateL.length),'due date passed, no screenshot')}${kpi('Withdrew',nf(wd.length),nopay.length?nf(nopay.length)+' because they didn\'t pay':'')}${kpi('Deferred',nf(df.length))}${kpi('Collected (written amounts)',egp(sum(R)))}</div>
+   <h2 style="margin:16px 0 8px">By group</h2>
+   <div class="tbl-wrap"><table><thead><tr><th>Group</th><th>Attending</th><th>Cash · Inst.</th><th>Inst 1</th><th>Inst 2</th><th>Inst 3</th><th>Cash</th><th>Late</th><th>Withdrew</th><th>Deferred</th><th>Collected</th></tr></thead><tbody>
+    ${Object.entries(G).sort((a,b)=>gname(+a[0]).localeCompare(gname(+b[0]))).map(([gid,L])=>{const A=L.filter(r=>r.att);return `<tr><td class="ar" dir="auto"><a href="#mentoring" data-act="mt-open" data-id="${gid}">${esc(gname(+gid))}</a></td><td class="n">${A.length}</td><td class="n">${A.filter(r=>r.planK==='cash').length} · ${A.filter(r=>r.planK==='inst').length}</td><td class="n">${cnt(L,'inst1')}</td><td class="n">${cnt(L,'inst2')}</td><td class="n">${cnt(L,'inst3')}</td><td class="n">${cnt(L,'cash')}</td><td class="n" style="${A.some(r=>r.late.length)?'color:#b91c1c;font-weight:700':''}">${A.reduce((a,r)=>a+r.late.length,0)}</td><td class="n">${L.filter(r=>r.status==='Withdrawn').length}</td><td class="n">${L.filter(r=>r.status==='Deferred out').length}</td><td class="n">${nf(sum(L))}</td></tr>`}).join('')||'<tr><td colspan="11" class="empty">No students yet</td></tr>'}</tbody></table></div>
+   <h2 style="margin:16px 0 8px">Late installments</h2>
+   <div class="tbl-wrap"><table><thead><tr><th>Student</th><th>Mobile</th><th>Group</th><th>Installment</th><th>Was due</th><th>Days late</th>${canMtStatus()?'<th></th>':''}</tr></thead><tbody>
+    ${lateL.map(l=>`<tr style="background:#fee2e2"><td class="ar" dir="auto"><b>${esc(l.r.name||'')}</b></td><td class="num">${esc(l.r.phone||'')}</td><td class="ar" dir="auto">${esc(gname(l.r.group_id))}</td><td>${SLOT_T[l.k]}</td><td class="num">${fmtDay(l.due)}</td><td class="n">${Math.round((new Date(today())-new Date(l.due))/864e5)}</td>${canMtStatus()?`<td><button class="btn sm" data-act="mt-fin-status" data-id="${l.r.entry_id}" data-g="${l.r.group_id}">Mark withdrawn…</button></td>`:''}</tr>`).join('')||'<tr><td colspan="7" class="empty">Nobody is late 🎉 (set the due dates from each student\'s installment boxes)</td></tr>'}</tbody></table></div>
+   <h2 style="margin:16px 0 8px">Withdrawals & deferrals</h2>
+   <div class="tbl-wrap"><table><thead><tr><th>Student</th><th>Mobile</th><th>Group</th><th>Status</th><th>Reason</th><th>When</th><th>By</th></tr></thead><tbody>
+    ${moved.map(r=>`<tr style="background:${RST[r.status]?.bg||''}"><td class="ar" dir="auto"><b>${esc(r.name||'')}</b></td><td class="num">${esc(r.phone||'')}</td><td class="ar" dir="auto">${esc(gname(r.group_id))}</td><td><span class="rst" style="background:${RST[r.status]?.bd||'#999'}"></span>${r.status==='Deferred out'?'Deferred':'Withdrawn'}</td><td class="ar" dir="auto">${esc(r.status_reason||'—')}</td><td class="num">${r.status_set_at?fmtWhen(r.status_set_at):'—'}</td><td class="ar">${esc(r.status_by||'')}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">No withdrawals or deferrals</td></tr>'}</tbody></table></div>`}
+function mtFinXls(){const D=S.d.mt;const rsel=S.mt.finRound||'';const R=mtFinRows(D).filter(r=>!rsel||r.round_name===rsel);
+  const gname=id=>{const g=S.groups.find(x=>x.id===id);return g?`${g.name} · ${mtGroupLabel(g)}`:''};
+  const rows=R.map(r=>({Round:r.round_name||'',Group:gname(r.group_id),Name:r.name||'',Mobile:r.phone||'',Status:r.status,Plan:r.planK==='inst'?'Installments':r.planK==='cash'?'Cash':'',
+    ...Object.fromEntries(['inst1','inst2','inst3','cash'].flatMap(k=>[[SLOT_T[k]+' paid on',(r.slots||{})[k]?.date||''],[SLOT_T[k]+' amount',(r.slots||{})[k]?.amount||''],[SLOT_T[k]+' due',(r.inst_due||{})[k]||'']])),
+    Late:r.late.map(l=>SLOT_T[l.k]).join(', '),Reason:r.status_reason||'',Changed:r.status_set_at?dayOf(r.status_set_at):'',By:r.status_by||''}));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Students');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.filter(r=>r.Status==='Withdrawn'||r.Status==='Deferred out')),'Withdrawals & deferrals');
+  XLSX.writeFile(wb,'mentors-finance'+(rsel?'-'+rsel.replace(/\s+/g,'-'):'')+'-'+today()+'.xlsx')}
 async function mtReloadPay(){const pay=await Q(S.sb.rpc('mentor_group_pay',{p_group:S.mt.group})).catch(()=>null);if(pay)S.d.mt.pay=Object.fromEntries(pay.map(p=>[p.entry_id,p]));render()}
 async function mentoringClick(act,a,id){
   if(act==='mt-proof'){mtProofModal(+id,a.dataset.k);return}
+  if(act==='mt-status'){mtStatusModal(+id);return}
+  if(act==='mt-status-save'){a.disabled=true;await mtStatusSave();a.disabled=false;return}
+  if(act==='mt-fin-xls'){mtFinXls();return}
+  if(act==='mt-fin-status'){S.mt.group=+a.dataset.g;await loadView();mtStatusModal(+id);return}
   if(act==='mt-proof-save'){a.disabled=true;await mtProofSave();a.disabled=false;return}
-  if(act==='mt-tab'){S.mt.tab=a.dataset.k;render()}
+  if(act==='mt-tab'){S.mt.tab=a.dataset.k;if(a.dataset.k==='finance')loadView();else render()}
   else if(act==='mt-old'){S.mt.old=a.checked;render()}
   else if(act==='mt-open'){S.mt.group=+id;S.mt.q='';loadView()}
   else if(act==='mt-back'){S.mt.group=null;loadView()}
@@ -2035,6 +2101,7 @@ document.addEventListener('change',async e=>{
   if(el.dataset.actCh==='py-reason'){const b=resBalance(S.modal.res);if(el.value==='overpaid'){$('#py-amt').value=b.over||'';$('#py-close').checked=false}else if(el.value==='cancelled'){$('#py-amt').value=b.paid||'';$('#py-close').checked=true}return}
   if(el.dataset.actCh==='r-course'){$('#r-group').innerHTML=groupOptions(el.value,true);updResPrice();return}
   if(el.dataset.actCh==='r-plan'){updResPrice();return}
+  if(el.dataset.actCh==='ms-pick'){const w=$('#ms-why');if(el.value==='__other'){w.value='';w.focus()}else if(el.value)w.value=el.value;if(el.value&&el.value!=='__other'&&/دفع|سحب/.test(el.value)){const r=document.querySelector('input[name=ms-st][value=Withdrawn]');if(r)r.checked=true}return}
   if(el.dataset.actCh==='i-lead'){const o=el.selectedOptions[0];if(o&&o.value){$('#i-name').value=o.dataset.n||'';$('#i-phone').value=o.dataset.p||'';$('#i-course').value=o.dataset.c||''}return}
   if(el.id==='br-logo'&&el.files[0]){const f=el.files[0];const img=new Image();img.onload=()=>{const c=document.createElement('canvas');const sc=Math.min(1,256/Math.max(img.width,img.height));c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);c.getContext('2d').drawImage(img,0,0,c.width,c.height);S.brandLogo=c.toDataURL('image/png');$('#br-prev').src=S.brandLogo;URL.revokeObjectURL(img.src)};img.onerror=()=>toast("Couldn't read that image");img.src=URL.createObjectURL(f);return}
   if(el.id==='imp-file'&&el.files[0]){readFile(el.files[0]);return}
@@ -2045,6 +2112,7 @@ document.addEventListener('change',async e=>{
   else if(k.startsWith('resf.')){S.resf[k.slice(5)]=el.value;loadView()}
   else if(k.startsWith('imp.')){impState()[k.slice(4)]=el.value;render()}
   else if(k==='rf-date'){S.rf.date=el.value||today();loadView()}
+  else if(k==='mt-finr'){S.mt.finRound=el.value;render()}
   else if(k==='mt-plan'){if(!el.value)return;const ok=await guard(()=>Q(S.sb.rpc('mentor_set_plan',{p_entry:+el.dataset.id,p_plan:el.value})),el.value==='inst'?'Installments · 3 slots ✓':'Cash · 1 slot ✓');await mtReloadPay()}
   else if(k==='rd-st'){S.rd.st=el.value;render()}
   else if(k==='rd-ag'){S.rd.ag=el.value;render()}
