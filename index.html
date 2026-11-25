@@ -129,6 +129,8 @@ td .s{color:var(--muted);font-size:12px;display:block}
 .who{display:flex;align-items:center;gap:12px;background:var(--bg);border-radius:10px;padding:12px;flex-wrap:wrap}
 .who .nm{font-size:15px;font-weight:600;display:block}
 .timeline{display:flex;flex-direction:column;gap:2px}
+.tl-item{padding:8px 2px;border-bottom:1px solid var(--line,#eee);font-size:14px}.tl-item:last-child{border-bottom:0}
+@media(max-width:900px){.grid2{grid-template-columns:1fr!important}}
 .tl{border-inline-start:3px solid var(--line);padding:6px 12px;position:relative}
 .tl::before{content:"";position:absolute;left:-7px;top:11px;width:11px;height:11px;border-radius:50%;background:var(--surface);border:2px solid var(--line)}
 .tl.k-created::before{border-color:var(--info)} .tl.k-call::before{border-color:var(--muted)} .tl.k-reserved::before{border-color:var(--good);background:var(--good)}
@@ -241,7 +243,8 @@ const GR=Object.fromEntries(GROUPS);
 const LOST=['Wants a different course','Price is too high','Timing isn\'t right now','Place is too far','Already took a similar course','Just browsing / no real need','Other'];
 const GOVS=['Cairo','Giza','Alexandria','Qalyubia','Dakahlia','Sharqia','Gharbia','Monufia','Beheira','Kafr El Sheikh','Damietta','Port Said','Ismailia','Suez','Faiyum','Beni Suef','Minya','Asyut','Sohag','Qena','Luxor','Aswan','Red Sea','New Valley','Matrouh','North Sinai','South Sinai','Outside Egypt'];
 const GOV_AR={'القاهرة':'Cairo','القاهره':'Cairo','الجيزة':'Giza','الجيزه':'Giza','الإسكندرية':'Alexandria','الاسكندرية':'Alexandria','اسكندرية':'Alexandria','القليوبية':'Qalyubia','الدقهلية':'Dakahlia','الدقهليه':'Dakahlia','الشرقية':'Sharqia','الغربية':'Gharbia','المنوفية':'Monufia','البحيرة':'Beheira','كفر الشيخ':'Kafr El Sheikh','دمياط':'Damietta','بورسعيد':'Port Said','الإسماعيلية':'Ismailia','الاسماعيلية':'Ismailia','السويس':'Suez','الفيوم':'Faiyum','بني سويف':'Beni Suef','المنيا':'Minya','أسيوط':'Asyut','اسيوط':'Asyut','سوهاج':'Sohag','قنا':'Qena','الأقصر':'Luxor','الاقصر':'Luxor','أسوان':'Aswan','اسوان':'Aswan','البحر الأحمر':'Red Sea','الوادي الجديد':'New Valley','مطروح':'Matrouh','شمال سيناء':'North Sinai','جنوب سيناء':'South Sinai'};
-const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent',ops:'Rounds (Operations)'};
+const ROLES={admin:'Admin',tl:'Team Leader',agent:'Agent',ops:'Rounds (Operations)',mentor:'Mentor',mentor_tl:'Team Leader Mentor'};
+const isMentorRole=r=>r==='mentor'||r==='mentor_tl';
 const RESULTS={passed:{t:'Passed',c:'green'},again:{t:'Come back again',c:'amber'},noshow:{t:'No-show',c:''},failed:{t:'Not a fit',c:'red'}};
 const ISTATUS={pending:{t:'Under review',c:'amber'},accepted:{t:'Accepted',c:'green'},rejected:{t:'Rejected',c:'red'}};
 const RSTATUS={Active:'green',Cancelled:'red',Refunded:'amber',Completed:'blue'};
@@ -402,7 +405,7 @@ async function enter(){
     if(!me){S.authMsg="This account doesn't have access to this system. Ask your admin to add you.";await S.sb.auth.signOut();S.booting=false;await checkAdmin();render();return}
     if(!me.active){S.authMsg='Your account has been deactivated. Contact your admin.';await S.sb.auth.signOut();S.booting=false;render();return}
     S.me=me;await loadRef();S.me=S.profiles[uid]||me;
-    const h=location.hash.slice(1);S.view=h||(me.role==='agent'?'leads':me.role==='ops'?'rounds':'dashboard');
+    const h=location.hash.slice(1);S.view=h||(me.role==='agent'?'leads':me.role==='ops'?'rounds':isMentorRole(me.role)?'mentoring':'dashboard');
   }catch(e){console.error(e);S.authMsg=errMsg(e)}
   S.booting=false;render();loadView();checkReminders(true);
 }
@@ -438,10 +441,10 @@ function view(){
   if(!S.sb||S.booting)return `<div class="center"><div class="card">${brandHead()}<p class="hint"><span class="spin"></span> Loading…</p></div></div>`;
   if(!S.me)return authView();
   const me=S.me;
-  const navs=me.role==='ops'?[['rounds','Rounds']]:me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
+  const navs=me.role==='mentor'?[['mentoring','My Groups']]:me.role==='mentor_tl'?[['mentoring','Groups & Mentors']]:me.role==='ops'?[['rounds','Rounds']]:me.role==='agent'?[['leads','My Leads'],['reports','Daily Reports'],['reservations','My Reservations'],['dashboard','My Numbers'],['attendance','My Shifts']]:
     me.role==='tl'?[['dashboard','Dashboard'],['insights','Insights'],['leads','Team Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['attendance','Shifts & Deductions']]:
-    [['dashboard','Dashboard'],['insights','Insights'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['rounds','Rounds'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
-  if(me.role!=='admin'&&me.role!=='ops'&&me.rounds_access)navs.push(['rounds','Rounds']);
+    [['dashboard','Dashboard'],['insights','Insights'],['leads','All Leads'],['import','Import Leads'],['reservations','Reservations'],['reports','Daily Reports'],['interns','Interviews'],['rounds','Rounds'],['mentoring','Mentors'],['attendance','Shifts & Deductions'],['team','Team & Accounts'],['config','Settings']];
+  if(me.role!=='admin'&&me.role!=='ops'&&!isMentorRole(me.role)&&me.rounds_access)navs.push(['rounds','Rounds']);
   if(!navs.find(n=>n[0]===S.view))S.view=navs[0][0];
   const showPeriod=['dashboard','leads','reservations','insights'].includes(S.view)||(S.view==='reports'&&S.rf.tab==='sum');
   return `<div class="app">
@@ -452,7 +455,7 @@ function view(){
    <div class="top"><button class="btn sm menu-btn" data-act="menu" aria-label="Menu">☰</button>
     ${showPeriod?`<select class="inp" id="period" data-ch="period" aria-label="Period">${PERIODS.map(([k,t])=>`<option value="${k}" ${S.period===k?'selected':''}>${t}</option>`).join('')}</select>`:''}
     <div class="sp"></div>${S.loading?'<span class="spin" aria-label="Loading"></span>':''}<button class="btn sm" data-act="refresh">Refresh</button></div>
-   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView,insights:insightsView}[S.view]||dashView)()}</div>
+   <div class="page">${({dashboard:dashView,leads:leadsView,import:importView,reservations:resView,reports:reportsView,interns:internsView,attendance:attView,team:teamView,config:settingsView,rounds:roundsView,insights:insightsView,mentoring:mentoringView}[S.view]||dashView)()}</div>
   </div></div>`;
 }
 /* ===== reminders: the agent's own follow-ups / call-backs whose time has come ===== */
@@ -461,7 +464,7 @@ function remBar(){const R=S.rem;if(!R||!R.n||R.hidden===R.sig)return '';
   return `<div class="rembar" role="alert"><b>⏰ ${plural(R.n,'call-back')} due now</b><span class="ar">${R.list.slice(0,3).map(l=>`${esc(l.name||l.phone)} (${l.status==='Call Later'?'call later':'follow-up'} ${esc(fuLabel(l))})`).join(' · ')}${R.n>3?' …':''}</span><div class="sp"></div>
    ${canAsk?'<button class="btn sm" data-act="rem-alerts">Turn on pop-up alerts</button>':''}<button class="btn sm pri" data-act="rem-open">Show them</button><button class="btn sm" data-act="rem-hide" aria-label="Hide until a new one is due">Hide</button></div>`}
 async function checkReminders(force){
-  if(!S.me||!S.sb||S.me.role==='ops'||S.me.active===false)return;
+  if(!S.me||!S.sb||S.me.role==='ops'||isMentorRole(S.me.role)||S.me.active===false)return;
   let list;try{list=await Q(S.sb.from('leads').select('id,name,phone,status,follow_up,follow_up_at').eq('agent_id',S.me.id).or(dueOr()).not('status','in','("Reserved","Not Interested")').order('follow_up_at',{ascending:true,nullsFirst:false}).limit(50))}catch(e){console.warn(e);return}
   const old=S.rem||{seen:new Set()};const seen=old.seen||new Set();const fresh=list.filter(l=>!seen.has(l.id+'|'+(l.follow_up_at||l.follow_up)));
   fresh.forEach(l=>seen.add(l.id+'|'+(l.follow_up_at||l.follow_up)));
@@ -488,8 +491,8 @@ function authView(){
   </div></div>`;
 }
 async function loadView(){
-  if(!S.me)return;if(S.me.role==='ops')S.view='rounds';if(S.view==='rounds'&&!hasRounds())S.view='dashboard';if(S.view==='insights'&&!isMgr())S.view='dashboard';S.loading=true;render();
-  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam,rounds:loadRounds,insights:loadInsights}[S.view];if(fn)await fn()}
+  if(!S.me)return;if(isMentorRole(S.me.role))S.view='mentoring';if(S.view==='mentoring'&&!isMentorRole(S.me.role)&&!isAdmin())S.view='dashboard';if(S.me.role==='ops')S.view='rounds';if(S.view==='rounds'&&!hasRounds())S.view='dashboard';if(S.view==='insights'&&!isMgr())S.view='dashboard';S.loading=true;render();
+  try{const fn={dashboard:loadDash,leads:loadLeads,reservations:loadRes,groups:loadGroups,config:loadGroups,reports:loadReports,interns:loadInterns,attendance:loadAtt,team:loadTeam,rounds:loadRounds,insights:loadInsights,mentoring:loadMentoring}[S.view];if(fn)await fn()}
   catch(e){console.error(e);toast(errMsg(e))}
   S.loading=false;render();
 }
@@ -1626,14 +1629,14 @@ function teamView(){
   </tbody></table></div>`;
 }
 function staffModal(id){
-  const p=id?S.profiles[id]:{role:'agent',active:true,start_date:today()};const tls=Object.values(S.profiles).filter(x=>x.role==='tl'&&x.active);const self=id===S.me.id;
+  const p=id?S.profiles[id]:{role:'agent',active:true,start_date:today()};const tls=Object.values(S.profiles).filter(x=>(x.role==='tl'||x.role==='mentor_tl')&&x.active);const self=id===S.me.id;
   S.modal={type:'st',id,prefill:S.modal?.prefill};const pre=S.modal.prefill||{};
   openModal(`${mhead(id?'Manage <span class="ar">'+esc(p.name)+'</span>':'New account')}<div class="mb">
    <div class="row"><div class="field"><label for="s-name">Name <i>*</i></label><input class="inp ar" id="s-name" value="${esc(p.name||pre.name||'')}" autofocus></div><div class="field"><label for="s-phone">Mobile</label><input class="inp" id="s-phone" value="${esc(p.phone||pre.phone||'')}"></div></div>
    ${id?`<div class="field"><label>Email (login)</label><div>${esc(p.email||'—')}</div></div>`:`<div class="row"><div class="field"><label for="s-email">Email (login) <i>*</i></label><input class="inp" id="s-email" type="email"></div>
     <div class="field"><label for="s-pw">Password <i>*</i></label><div class="row" style="flex-wrap:nowrap"><input class="inp" id="s-pw" value="${genPassword()}" style="flex:1"><button class="btn sm" data-act="gen-pw" type="button">New</button></div></div></div>`}
    <div class="row"><div class="field"><label for="s-role">Role</label><select class="inp" id="s-role" ${self?'disabled':''}>${Object.entries(ROLES).map(([k,v])=>`<option value="${k}" ${p.role===k?'selected':''}>${v}</option>`).join('')}</select></div>
-    <div class="field"><label for="s-tl">Team leader</label><select class="inp ar" id="s-tl"><option value="">—</option>${tls.filter(t=>t.id!==id).map(t=>`<option value="${t.id}" ${p.tl_id===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div></div>
+    <div class="field"><label for="s-tl">Team leader</label><select class="inp ar" id="s-tl"><option value="">—</option>${tls.filter(t=>t.id!==id).map(t=>`<option value="${t.id}" ${p.tl_id===t.id?'selected':''}>${esc(t.name)}${t.role==='mentor_tl'?' (Team Leader Mentor)':''}</option>`).join('')}</select><div class="hint">For a Mentor, pick their Team Leader Mentor.</div></div></div>
    <div class="row"><div class="field"><label for="s-start">Start date</label><input type="date" class="inp" id="s-start" value="${esc(p.start_date||today())}"></div>
     <div class="field"><label for="s-salary">Monthly salary (EGP, optional)</label><input type="number" min="0" class="inp num" id="s-salary" value="${esc(p.salary??'')}"></div></div>
    <div class="field"><label for="s-notes">Notes</label><input class="inp ar" dir="auto" id="s-notes" value="${esc(p.notes||'')}"></div>
@@ -1667,6 +1670,91 @@ async function createAccount(){
   }catch(e){console.error(e);toast(errMsg(e));if(btn)btn.disabled=false}
 }
 
+/* ================= mentors =================
+   Mentor: sees only the groups chosen for them, read-only (students and the updates of the group).
+   Team Leader Mentor: sees every group read-only, and chooses the groups of the mentors on their team. Admin: everything. */
+const mentorsOf=()=>Object.values(S.profiles).filter(p=>p.role==='mentor'&&(isAdmin()||p.tl_id===S.me.id)).sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
+const canManageMentors=()=>isAdmin()||S.me.role==='mentor_tl';
+async function loadMentoring(){
+  if(!S.mt)S.mt={tab:'groups',group:null,q:'',old:false};
+  const [mg,cnt]=await Promise.all([Q(S.sb.from('mentor_groups').select('mentor_id,group_id')),Q(S.sb.rpc('mentor_group_counts'))]);
+  const counts={};(cnt||[]).forEach(c=>counts[c.group_id]=c);
+  S.d.mt={mg,counts,students:null,updates:null};
+  if(S.mt.group){const [st,up]=await Promise.all([Q(S.sb.rpc('mentor_group_students',{p_group:S.mt.group})),Q(S.sb.rpc('mentor_group_updates',{p_group:S.mt.group,p_limit:300}))]);S.d.mt.students=st;S.d.mt.updates=up}
+}
+function mtVisibleGroups(){const D=S.d.mt;let gs=S.groups.slice();
+  if(S.me.role==='mentor'){const mine=new Set(D.mg.filter(x=>x.mentor_id===S.me.id).map(x=>x.group_id));gs=gs.filter(g=>mine.has(g.id))}
+  else if(!S.mt.old)gs=gs.filter(g=>g.active||(D.counts[g.id]&&D.counts[g.id].attending));
+  return gs.sort((a,b)=>rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name)||String(a.location||'').localeCompare(String(b.location||'')))}
+const mtGroupLabel=g=>[g.location,g.schedule].filter(Boolean).join(' · ')||g.name;
+function mentoringView(){
+  const D=S.d.mt;if(!D||!S.mt)return '<div class="empty"><span class="spin"></span></div>';
+  if(S.mt.group)return mtGroupView(D);
+  const mgr=canManageMentors();const tab=mgr?S.mt.tab:'groups';
+  const head=`<div class="head"><div><h1>${S.me.role==='mentor'?'My groups':'Groups & mentors'}</h1><div class="sub">${S.me.role==='mentor'?'The groups you follow. You can see the students and every update in the group; changes are made by the operations team.':'Every group, read-only. Choose which groups each mentor follows from the Mentors tab.'}</div></div></div>
+   ${mgr?`<div class="tabs"><button data-act="mt-tab" data-k="groups" class="${tab==='groups'?'on':''}">Groups</button><button data-act="mt-tab" data-k="mentors" class="${tab==='mentors'?'on':''}">Mentors · ${mentorsOf().filter(m=>m.active).length}</button></div>`:''}`;
+  if(tab==='mentors')return head+mtMentorsView(D);
+  const gs=mtVisibleGroups();const by={};gs.forEach(g=>{const k=locKey(g.name);(by[k]=by[k]||[]).push(g)});
+  const who=gid=>D.mg.filter(x=>x.group_id===gid).map(x=>pname(x.mentor_id));
+  return head+`${S.me.role!=='mentor'?`<div class="row" style="margin-bottom:10px"><label class="check"><input type="checkbox" data-act="mt-old" ${S.mt.old?'checked':''}><span>Show finished / inactive groups too</span></label></div>`:''}
+   ${Object.keys(by).length?Object.entries(by).map(([rn,list])=>`<h2 style="margin:14px 0 8px">${esc(rn)}</h2><div class="rgrid">${list.map(g=>{const c=D.counts[g.id]||{attending:0,total:0};const ms=who(g.id);
+     return `<button class="card rcard" data-act="mt-open" data-id="${g.id}"><div class="row"><h2 class="ar" dir="auto" style="font-size:17px">${esc(mtGroupLabel(g))}</h2><div class="sp"></div>${g.active?'':'<span class="pill">Inactive</span>'}</div>
+      <div class="hint">${esc(g.course||'')}${g.mode?' · '+esc(g.mode):''}${g.start_date?' · starts '+fmtDay(g.start_date):''}</div>
+      <div class="rnums"><div><b>${c.attending}</b><span>Attending</span></div><div><b>${c.total-c.attending}</b><span>Left / moved</span></div></div>
+      ${S.me.role!=='mentor'?`<div class="hint ar" dir="auto">${ms.length?'Mentor: '+ms.map(esc).join('، '):'<span style="color:#b45309">No mentor yet</span>'}</div>`:''}</button>`}).join('')}</div>`).join('')
+    :`<div class="empty">${S.me.role==='mentor'?'No groups have been chosen for you yet. Your Team Leader Mentor will add them.':'No groups yet.'}</div>`}`;
+}
+function mtMentorsView(D){const ms=mentorsOf();
+  return `<div class="tbl-wrap"><table class="cards"><thead><tr><th>Mentor</th>${isAdmin()?'<th>Team Leader Mentor</th>':''}<th>Groups they follow</th><th></th></tr></thead><tbody>
+   ${ms.map(m=>{const gs=D.mg.filter(x=>x.mentor_id===m.id).map(x=>S.groups.find(g=>g.id===x.group_id)).filter(Boolean);
+    return `<tr><td data-l="Mentor"><b class="ar">${esc(m.name)}</b>${m.active?'':' <span class="pill red">Deactivated</span>'}</td>${isAdmin()?`<td data-l="Team Leader Mentor" class="ar">${m.tl_id?esc(pname(m.tl_id)):'—'}</td>`:''}
+     <td data-l="Groups">${gs.length?gs.map(g=>`<span class="pill ar" dir="auto" style="margin:2px">${esc(g.name)} · ${esc(mtGroupLabel(g))}</span>`).join(''):'<span class="hint">None yet</span>'}</td>
+     <td><button class="btn sm" data-act="mt-assign" data-id="${m.id}">Choose groups</button></td></tr>`}).join('')||`<tr><td colspan="4" class="empty">${isAdmin()?'No mentor accounts yet. Create them from Team & Accounts with the role "Mentor".':'No mentors on your team yet. Your admin adds them and sets you as their team leader.'}</td></tr>`}
+   </tbody></table></div>`}
+function mtAssignModal(mid){const D=S.d.mt;const m=S.profiles[mid];const mine=new Set(D.mg.filter(x=>x.mentor_id===mid).map(x=>x.group_id));
+  const gs=S.groups.filter(g=>g.active||mine.has(g.id)).sort((a,b)=>rnum(b.name)-rnum(a.name)||a.name.localeCompare(b.name));const by={};gs.forEach(g=>{const k=locKey(g.name);(by[k]=by[k]||[]).push(g)});
+  S.modal={type:'mtassign',id:mid};
+  openModal(`${mhead('Groups for <span class="ar">'+esc(m.name)+'</span>')}<div class="mb">
+   <div class="hint">Tick the groups this mentor follows. They will see the students and the updates of these groups only, and can't change anything.</div>
+   ${Object.entries(by).map(([rn,list])=>`<div><h3 style="margin:8px 0 4px">${esc(rn)}</h3>${list.map(g=>`<label class="check"><input type="checkbox" class="mt-g" value="${g.id}" ${mine.has(g.id)?'checked':''}><span class="ar" dir="auto">${esc(mtGroupLabel(g))}${g.course?' · '+esc(g.course):''}${g.active?'':' · inactive'}</span></label>`).join('')}</div>`).join('')||'<div class="empty">No groups yet. Add them in Settings.</div>'}
+  </div><div class="mf"><button class="btn pri" data-act="mt-assign-save">Save</button><button class="btn" data-act="close">Cancel</button></div>`,true)}
+async function mtAssignSave(){const mid=S.modal.id;const D=S.d.mt;const had=new Set(D.mg.filter(x=>x.mentor_id===mid).map(x=>x.group_id));
+  const want=new Set([...document.querySelectorAll('.mt-g:checked')].map(x=>+x.value));
+  const add=[...want].filter(g=>!had.has(g)),del=[...had].filter(g=>!want.has(g));
+  const ok=await guard(async()=>{if(add.length)await Q(S.sb.from('mentor_groups').insert(add.map(g=>({mentor_id:mid,group_id:g,assigned_by:S.me.id}))));
+    if(del.length)await Q(S.sb.from('mentor_groups').delete().eq('mentor_id',mid).in('group_id',del))},'Groups saved ✓');
+  if(ok){closeModal();loadView()}}
+function mtUpdateLine(u){const c=u.changes||{};let t;
+  if(u.left_group)t='<b>Left this group</b>'+(c.group_id&&c.group_id[1]&&S.groups.some(g=>g.id===+c.group_id[1])?' → '+esc(logVal('group_id',c.group_id[1])):'')+(c.round?' · moved to '+esc(c.round[1]||''):'');
+  else if(u.action==='added')t=`Joined the group${c.status&&c.status[1]?' as <b>'+esc(c.status[1])+'</b>':''}`;
+  else if(u.action==='removed')t='Removed';
+  else if(c.group_id&&Object.keys(c).length<=2)t='<b>Joined this group</b>'+(c.group_id[0]?' (from '+esc(logVal('group_id',c.group_id[0]))+')':'');
+  else t=logText(u);
+  return `<div class="tl-item"><div class="row" style="gap:8px"><b class="ar" dir="auto">${esc(u.person||'—')}</b><span class="hint num">${esc(u.phone||'')}</span><div class="sp"></div><span class="hint">${fmtWhen(u.at)}${u.by_name?' · '+esc(u.by_name):''}</span></div><div>${t}</div></div>`}
+function mtGroupView(D){const g=S.groups.find(x=>x.id===S.mt.group)||{name:'Group'};const q=AR(S.mt.q||'').toLowerCase();
+  const st=(D.students||[]).filter(s=>!q||AR([s.name,s.phone,s.email].join(' ')).toLowerCase().includes(q));
+  const inn=st.filter(s=>['Active','Deferred in'].includes(s.status)),out=st.filter(s=>!['Active','Deferred in'].includes(s.status));
+  const ms=D.mg.filter(x=>x.group_id===g.id).map(x=>pname(x.mentor_id));
+  const tbl=(list,emptyMsg)=>`<div class="tbl-wrap"><table class="cards"><thead><tr><th>#</th><th>Name</th><th>Mobile</th><th>Email</th><th>Status</th><th>Booked</th></tr></thead><tbody>
+    ${list.map((s,i)=>`<tr style="${RST[s.status]?.bg?'background:'+RST[s.status].bg:''}"><td class="n">${i+1}</td><td data-l="Name" class="ar" dir="auto"><b>${esc(s.name||'')}</b></td><td data-l="Mobile" class="num">${esc(s.phone||'')}</td><td data-l="Email">${esc(s.email||'')}</td><td data-l="Status"><span class="rst" style="background:${RST[s.status]?.bd||'#999'}"></span>${esc(s.status)}</td><td data-l="Booked" class="num">${esc(s.booked_on||'')}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">${emptyMsg}</td></tr>`}</tbody></table></div>`;
+  return `<div class="head"><div><div class="hint"><a href="#mentoring" data-act="mt-back">← ${S.me.role==='mentor'?'My groups':'All groups'}</a></div><h1 class="ar" dir="auto">${esc(g.name)} · ${esc(mtGroupLabel(g))}</h1>
+    <div class="sub">${esc(g.course||'')}${g.start_date?' · starts '+fmtDay(g.start_date):''} · <b>${plural(inn.length,'student')} attending</b>${ms.length?' · Mentor: <span class="ar">'+ms.map(esc).join('، ')+'</span>':''} · read-only</div></div></div>
+   <div class="row" style="margin-bottom:10px"><input class="inp" data-in="mtq" id="mt-q" placeholder="Search name, mobile, email…" value="${esc(S.mt.q||'')}" style="max-width:320px"></div>
+   <div class="grid2" style="display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;align-items:start">
+    <div>${tbl(inn,'No students attending in this group yet')}
+     ${out.length?`<h3 style="margin:14px 0 8px">Not attending any more (withdrawn / deferred / refunded)</h3>${tbl(out,'')}`:''}</div>
+    <div class="card"><h3 style="margin-bottom:8px">Updates</h3><div class="hint" style="margin-bottom:8px">Who joined, left, moved or changed status in this group, newest first.</div>
+     <div class="timeline" style="max-height:70vh;overflow:auto">${(D.updates||[]).map(mtUpdateLine).join('')||'<div class="empty">No updates yet</div>'}</div></div>
+   </div>`}
+async function mentoringClick(act,a,id){
+  if(act==='mt-tab'){S.mt.tab=a.dataset.k;render()}
+  else if(act==='mt-old'){S.mt.old=a.checked;render()}
+  else if(act==='mt-open'){S.mt.group=+id;S.mt.q='';loadView()}
+  else if(act==='mt-back'){S.mt.group=null;loadView()}
+  else if(act==='mt-assign'){if(canManageMentors())mtAssignModal(id)}
+  else if(act==='mt-assign-save'){a.disabled=true;await mtAssignSave();a.disabled=false}
+}
+
 /* ================= shifts & deductions ================= */
 function monthRange(m){const [y,mo]=m.split('-').map(Number);return [`${y}-${pad(mo)}-01`,dstr(new Date(y,mo,0))]}
 const logTypes=()=>setting('log_types',[]);
@@ -1682,7 +1770,7 @@ function attData(){
   const D=S.d.att;const t=today();const days=[];for(let d=D.from;d<=D.to;d=addDays(d,1))days.push(d);
   const act={};D.act.forEach(a=>{(act[a.user_id]=act[a.user_id]||{})[a.day]=a.calls});
   const rep={};D.reps.forEach(r=>{(rep[r.agent_id]=rep[r.agent_id]||{})[r.report_date]=r.created_at});
-  const people=visibleStaff().filter(p=>p.role!=='admin'&&p.start_date<=D.to&&(!p.end_date||p.end_date>=D.from)).sort((a,b)=>a.start_date.localeCompare(b.start_date)||a.name.localeCompare(b.name));
+  const people=visibleStaff().filter(p=>p.role!=='admin'&&!isMentorRole(p.role)&&p.start_date<=D.to&&(!p.end_date||p.end_date>=D.from)).sort((a,b)=>a.start_date.localeCompare(b.start_date)||a.name.localeCompare(b.name));
   return {days,people:people.map(p=>{
     const lg=D.log.filter(l=>l.user_id===p.id);const off=offDaysOf(p.id);
     const s={employed:0,off:0,leave:0,expected:0,present:0,absent:0,offWorked:0,reports:Object.keys(rep[p.id]||{}).length,missing:0,late:0,violations:0,deduct:0,calls:0,leaveTypes:{}};
@@ -1903,6 +1991,7 @@ document.addEventListener('input',e=>{
   if(k==='q'){S.f.q=el.value;S.f.page=0;clearTimeout(qT);qT=setTimeout(loadView,350)}
   else if(k==='brand'){$('#br-pn').textContent=$('#br-name').value;$('#br-ps').textContent=$('#br-sub').value}
   else if(k==='rdq'){S.rd.q=el.value;clearTimeout(qT);qT=setTimeout(()=>{render();const i=$('#rd-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},300)}
+  else if(k==='mtq'){S.mt.q=el.value;clearTimeout(qT);qT=setTimeout(()=>{render();const i=$('#mt-q');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)}
   else if(k==='inq'){S.inf.q=el.value;clearTimeout(qT);qT=setTimeout(render,250)}
   else if(k==='imp'){const s=impState();s.text=el.value;clearTimeout(qT);qT=setTimeout(()=>{s.rows=rowsToLeads(parseTable(s.text));s.fileName='';render();checkDups()},500)}
 });
@@ -1955,6 +2044,7 @@ document.addEventListener('click',async e=>{
   if(act==='pw-mine'){S.modal={type:'pw'};openModal(`${mhead('Change my password')}<div class="mb"><div class="field"><label for="pw-new">New password (8+ characters)</label><input class="inp" id="pw-new" type="password" autocomplete="new-password" autofocus></div></div><div class="mf"><button class="btn pri" data-act="pw-save">Save</button><button class="btn" data-act="close">Cancel</button></div>`);return}
   if(act==='pw-save'){const pw=$('#pw-new').value;if(pw.length<8){toast('Use at least 8 characters');return}const {error}=await S.sb.auth.updateUser({password:pw});if(error)toast(errMsg(error));else{toast('Password changed ✓');closeModal()}return}
   if(act.startsWith('rd-')||act.startsWith('mr-')){await roundsClick(act,a,id);return}
+  if(act.startsWith('mt-')){await mentoringClick(act,a,id);return}
   // leads
   if(act==='tab'){S.f.tab=a.dataset.k;S.f.page=0;S.sel.clear();loadView()}
   else if(act==='pg'){S.f.page+=+a.dataset.d;loadView();window.scrollTo(0,0)}
